@@ -29,3 +29,5 @@ samples/noticeboard/pyslet
 pep8-count.txt
 flake8-count.txt
 
+* virtual env
+py3env
