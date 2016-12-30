@@ -1,4 +1,9 @@
+#! /usr/bin/env python
+"""This module implements the GIFT specification defined by Moodle """
 
+from . import (
+	giftns,
+	variables)
 
 
 class GIFTDocument(giftns.GIFTNSDocument):
@@ -29,11 +34,13 @@ class GIFTDocument(giftns.GIFTNSDocument):
 	def __init__(self):
 		pass
 
-	def read(self, src):
+	#def read(self, src):
 		"""
 		Parses a BytesIO object
 
 		Usage: read(src=BytesIO(input))
 		input is a b"" string
 		"""
-		pass
+		#pass
+
+giftns.map_class_elements(GIFTDocument.classMap, variables)

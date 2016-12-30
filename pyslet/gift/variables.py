@@ -22,4 +22,9 @@ class MultipleContainer(Container):
 		value = variables.MultipleContainer(mapping.baseType)
 		value.set_value(iter(v))
 	"""
+	pass
+
+class OrderedContainer(Container):
+	pass
+
 		 
