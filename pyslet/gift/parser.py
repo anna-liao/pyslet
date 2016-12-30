@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 
-from . import structures as gift
+import structures as gift
 
 
 class GIFTFatalError(gift.GIFTError):
