@@ -15,8 +15,35 @@ class GIFTError(Exception):
 	pass
 
 
+class DuplicateGIFTNAME(GIFTError):
+	"""Raised by :py:func:`map_class_elements`
+
+	Indicates an attempt to declare two classes with same GIFT name.
+	"""
+	pass
+
+
 class GIFTAttributeSetter(GIFTError):
 	"""Raised when a badly formed attribute mapping is found."""
+	pass
+
+
+class GIFTMissingResourceError(GIFTError):
+	"""Raised when an entity cannot be found (e.g., missing file)"""
+	pass
+
+
+class GIFTMixedContentError(GIFTError):
+	"""Raised by :meth:`Element.get_value`
+
+	Indicates unexpected element children."""
+	pass
+
+
+class GIFTParentError(GIFTError):
+	"""Raised by :meth:`Element.attach_to_parent`
+
+	Indicates that the element was not an orphan."""
 	pass
 
 
@@ -43,6 +70,14 @@ class GIFTIDValueError(GIFTValidityError):
 	"""A validity error caused by an element with an invalid ID
 
 	ID attribute must satisfy the production for NAME."""
+	pass
+
+
+class GIFTUnknownChild(GIFTError):
+	"""Raised by :meth:`Element.remove_child`
+
+	Indicates that the child being removed was not found in the
+	element's content."""
 	pass
 
 
@@ -101,6 +136,34 @@ def is_valid_name(name):
 	else:
 		return False
 """
+
+
+def escape_char_data(src, quote=False):
+	"""Returns a string with GIFT reserved characters escaped.
+
+	We also escape return characters to prevent them being ignored.
+	If quote is True then the string is returned as a quoted attribute value.
+
+	GIFT Special Characters: https://docs.moodle.org/23/en/GIFT_format#Special_Characters_.7E_.3D_.23_.7B_.7D
+	Put backslash (\) before a control character
+	"""
+	data = []
+	# apos = 0
+	# quot = 0
+	for c in src:
+		if c == '~':
+			data.append('\~')
+		elif c == '=':
+			data.append('\=')
+		elif c == '#':
+			data.append('\#')
+		elif c == '{':
+			data.append('\{')
+		elif c == '}':
+			data.append('\}')
+		else:
+			data.append(c)
+	return ''.join(data)
 
 
 class ElementType(object):
@@ -677,10 +740,544 @@ class Element(Node):
 		"""
 		return iter(self._children)
 
-	def attach_to_doc(self):
+	def get_canonical_children(self):
+		"""Returns children with canonical white space
+
+		A wrapper for :py:meth:`get_children` that returns at iterable of the element's
+		children canonicalized for white space as follows.  We check the current setting
+		of gift:space, returning the same list of children as :py:meth:`get_children` if
+		'preserve' is in force.  Otherwise we remove any leading space and collapse all
+		all others to a single space character.
+		"""
 		pass
 
-	def detach_from_doc(self):
+	def _find_factory(self, child_class):
+		if hasattr(self, child_class.__name__):
+			return child_class.__name__
+		else:
+			for parent in child_class.__bases__:
+				fname = self._find_factory(parent)
+				if fname:
+					return fname
+			return None
+
+	def get_or_add_child(self, child_class):
+		"""Returns the first child of type child_class
+
+		If there is no child of that class then a new child is added.
+		"""
+		children = self.find_children_depth_first(child_class, max_depth=1)
+		try:
+			return children.next()
+		except StopIteration:
+			return self.add_child(child_class)
+
+	def add_child(self, child_class, name=None):
+		"""Adds a new child of the given class attached to this element.
+
+		child_class
+			A class object (or callable) used to create a new instance.
+
+		name
+			The name given to the element (by the caller).  If no name is given
+			then the default name for the child is used.  When the child returned
+			is an existing instance, name is ignored.
+
+		By default, an instance of child_class is created and attached
+		to the internal list of child elements.
+
+		Child creation can be customised to support a more natural
+		mapping for structured elements as follows.  Firstly, the name
+		of child_class (*not* the element name) is looked up in the
+		parent (self), if there is no match, the method resolution order
+		is followed for *child_class* looking up the names of each base
+		in turn until a matching attribute is found.  If there are no
+		matches then the default handling is performed.
+
+		Otherwise, the behaviour is determined by the matching attribute
+		as follows.
+
+		1   If the attribute is None then a new instance of child_class
+			is created and assigned to the attribute.
+		2   If the attribute is a list then a new instance of child_class
+			is created and appended to the attribute's value.
+		3   Finally, if the attribute value is already an instance of
+			child_class it is returned unchanged.
+		4   Deprecated: A method attribute is called either without
+			arguments (if the method name matches the child_class
+			exactly) or with the child_class itself passed as an
+			argument.  It must return the new child element.
+
+		In summary, a new child is created and attached to the element's
+		model *unless* the model supports a single element of the given
+		child_class and the element already exists (as evidenced by an
+		attribute with the name of child_class or one of its bases), in
+		which case the existing instance is returned.
+		"""
+		if self.is_empty():
+			self.validation_error("Unexpected child element", name)
+		child = None
+		factory_name = self._find_factory(child_class)
+		try:
+			if factory_name:
+				factory = getattr(self, factory_name)
+				if isinstance(factory, MethodType):
+					warnings.warn(
+						"%s.%s method-based content model is deprecated" %
+						(type(self).__name__, factory_name),
+						DeprecationWarning, stacklevel=3)
+					if factory_name != child_class.__name__:
+						child = factory(child_class)
+					else:
+						child = factory()
+				elif factory is None:
+					child = child_class(self)
+					setattr(self, factory_name, child)
+				elif isinstance(factory, list):
+					child = child_class(self)
+					factory.append(child)
+				elif isinstance(factory, child_class):
+					child = factory
+					child.reset(True)
+				else:
+					raise TypeError(
+						factory_name, repr(factory), repr(child_class))
+				if child is not None:
+					if name:
+						child.set_giftname(name)
+					return child
+			# else fall through to the default processing...
+			child = child_class(self)
+			self._children.append(child)
+			if name:
+				child.set_giftname(name)
+			return child
+		except TypeError as e:
+			import traceback
+			logging.error("Error creating GIFT element: %s", e)
+			traceback.print_exc()
+			raise TypeError("Can't create %s in %s" %
+				(child_class.__name__, self.__class__.__name__))
+
+	def remove_child(self, child):
+		"""Removes a child from this element's children.
+
+		child
+			A :class:`Element` instance that must be a direct child.
+			That is, one that would be yielded by :meth:`get_children`.
+
+		By default, we search the internal list of child elements.
+
+		For content model customisation we follow the same name matching
+		conventions as for child creation (see :meth:`add_child`).  If a
+		matching attribute is found then we process them as follows:
+
+		1. If the attribute's value is *child* then it is set to None,
+		if it is not *child* then :class:`GIFTUnknownChild` is raised.
+
+		2. If the attribute is a list then we remove *child* from the list.
+		If *child* is not in the list :class:`GIFTUnknownChild` is raised.
+
+		3. If the attribute is None then we raise :class:`GIFTUnknownChild`.
+		"""
+		if self.is_empty():
+			raise GIFTUnknownChild(child.giftname)
+		factory_name = self._find_factory(child.__class__)
+		if factory_name:
+			factory = getattr(self, factory_name)
+			if factory is None:
+				raise GIFTUnknownChild(child.giftname)
+			elif isinstance(factory, list):
+				match = False
+				for i in range3(len(factory)):
+					if factory[i] is child:
+						child.detach_from_doc()
+						child.parent = None
+						del factory[i]
+						match = True
+						break
+				if not match:
+					raise GIFTUnknownChild(child.giftname)
+			elif factory is child:
+				# Single allowable child is replaced with None
+				child.detach_from_doc()
+				child.parent = None
+				setattr(self, factory_name, None)
+			else:
+				raise TypeError("%s.%s in Element.remove_child" %
+					(type(self).__name__, factory_name))
+		else:
+			match = False
+			for i in range3(len(self._children)):
+				if self._children[i] is child:
+					child.detach_from_doc()
+					child.parent = None
+					del self._children[i]
+					match = True
+					break
+			if not match:
+				raise GIFTUnknownChild(child.giftname)
+
+	def find_children(self, child_class, child_list, max=None):
+		"""Finds children of a given class"""
+		pass
+
+	def find_children_breadth_first(self, child_class, sub_match=True,
+		max_depth=1000, **kws):
+		"""Generates all children of a given class"""
+		pass
+
+	def find_children_depth_first(self, child_class, sub_match=True,
+		max_depth=1000, **kws):
+		"""Generates all children of a given class"""
+		pass
+
+	def find_parent(self, parent_class):
+		"""Finds the first parent of the given class.
+
+		Traverses the hierarchy through parent elements until a matching
+		parent is found or returns None.
+		"""
+		parent = self.parent
+		while parent and not isinstance(parent, parent_class):
+			if isinstance(parent, Element):
+				parent = parent.parent
+			else:
+				parent = None
+		return parent
+
+	def attach_to_parent(self, parent):
+		"""Called to attach an orphan element to a parent.
+
+		This method is not normally needed, when creating GIFT elements you would
+		normally call :meth:`add_child` on the parent which ensures that elements
+		are create in the context of a parent node. The purpose of this method is
+		to allow orphaned elements to be associated with a (new) parent.  For example,
+		after being detached from one element hierarchy and attached to another.
+
+		This method does not do any special handling of child elements, the caller takes
+		responsibility for ensuring that this element will be returned by future calls
+		to parent.get_children().  However, :py:meth:`attach_to_doc` is called to ensure
+		id registrations are made.
+		"""
+		if self.parent:
+			raise GIFTParentError("Expected orphan")
+		self.parent = parent
+		self.attach_to_doc()
+
+	def attach_to_doc(self, doc=None):
+		"""Called when the element is first attached to a document.
+
+		This method is not normally needed.  When creating GIFT elements
+		you would normally call :meth:`add_child` on the parent which ensures
+		that elements are created in the context of a containing document.
+		The purpose of this method is to allow orphaned elements to be
+		associated with a parent (document) after creation.  For example,
+		after being detached from one element hierarchy and attached to another
+		(possibly in a different document).
+
+		The default implementation ensures that any ID attributes belonging
+		to this element or its descendents are registered.
+		"""
+		if doc is None:
+			doc = self.get_document()
+		if doc:
+			if self.id:
+				doc.register_element(self)
+			for child in self.get_children():
+				if isinstance(child, Element):
+					child.attach_to_doc(doc)
+
+	def detach_from_parent(self):
+		"""Called to detach an element from its parent
+
+		The result is that this element becomes an orphan.
+
+		This method does not do any special handling of child elements,
+		the caller takes responsibility for ensuring that this element
+		will no longer be returned by future calls to the (former) parent's
+		:meth:`get_children` method.
+
+		We do call :py:meth:`detach_from_doc` to ensure id registrations
+		are removed and :attr:`parent` is set to None.
+		"""
+		self.detach_from_doc()
+		self.parent = None
+
+	def detach_from_doc(self, doc=None):
+		"""Called when an element is being detached from a document.
+
+		doc
+			The document the element is being detached from, if None
+			then this is determined automatically.  Provided as an optimisation
+			for speed when detaching large parts of the element hierarchy.
+
+		The default implementation ensures that any ID attributes belonging
+		to this element or its descendants are unregistered.
+		"""
+		if doc is None:
+			doc = self.get_document()
+		if doc:
+			if self.id:
+				doc.unregister_element(self)
+			for child in self.get_children():
+				if isinstance(child, Element):
+					child.detach_from_doc(doc)
+
+	def add_data(self, data):
+		"""Adds a character string to this element's children.
+
+		This method raises a validation error if the element cannot take
+		data children."""
+		data = str(data)
+		if self.is_mixed():
+			if self._children and isinstance(self._children[-1], str):
+				# To ease the comparison function we collapse string children
+				self._children[-1] = self._children[-1] + data
+			else:
+				self._children.append(data)
+		else:
+			ws = True
+			for c in data:
+				if not is_s(c):
+					ws = False
+					break
+			if not ws:
+				self.validation_error("Unexpected data", data)
+
+	def content_changed(self):
+		pass
+
+	def generate_value(self):
+		pass
+
+	def get_value(self, ignore_elements=False):
+		"""Returns a single object representing the element's content.
+
+		ignore_elements
+			If True then any elements found in mixed content are ignored.
+			If False then any child elements cause :class:`GIFTMixedContentError`
+			to be raised.
+
+		The default implementation returns a character string and is only supported
+		for elements where mixed content is permitted (:py:meth:`is_mixed`).  It uses
+		:py:meth:`generate_value` to iterate through the children.
+
+		If the element is empty an empty string is returned.
+
+		Derived classes may return more complex objects, such as values of basic python
+		types or class instances that better represent the content of the element.
+		"""
+		# equivalent to join_characters in py2
+		return '.'.join(self.generate_value(ignore_elements))
+
+	def set_value(self, value):
+		"""Replaces the content of the element.
+
+		value
+			A character string used to replace the content of the
+			element.  Derived classes may support a wider range of
+			value types, if the default implementation encounters
+			anything other than a character string it attempts to
+			convert it before setting the content.
+
+		The default implementation is only supported for elements
+		where mixed content is permitted (see :py:meth:`is_mixed`)
+		and only affects the internally maintained list of children.
+		Elements with more complex mixed models MUST override this
+		method.
+
+		If *value is None then the element becomes empty.
+		"""
+		if not self.is_mixed():
+			raise GIFTMixedContentError
+		self.reset(False)
+		if value is None:
+			self._children = []
+		else:
+			self._children = [str(value)]
+
+	def reset(self, reset_attrs=False):
+		"""Resets all children (and optionally attribute values).
+
+		reset_attrs
+			Whether or not to reset attribute values too.
+
+			Called by the default implementation of :meth:`set_value`
+			with reset_attrs=False, removes all children from the
+			internally maintained list of children.
+
+			Called by the default implementation of :meth:`add_child`
+			with reset_attrs=True when an existing element instnace is
+			being recycled (obviating the constructor).  The default
+			implementation removes only *unmapped* attribute values.
+			Mapped attribute values are not reset.
+
+		Derived classes should call this method if they override the
+		implementation of :meth:`set_value`.
+
+		Derived classes with custom content models, i.e., those that
+		provide a custom implementation for :meth:`get_children`, must
+		override this method and treat it as an event associated with
+		parsing the start tag of the element.  (This method is also a
+		useful signal for resetting an state used for validating custom
+		content models.)
+
+		Required children should be reset and optional children should
+		be orphaned using :meth:`detach_from_parent` and any references
+		to them in instance attributes removed. Failure to override this
+		method will can result in the child elements accumulating from
+		one read to the next.
+		"""
+		if reset_attrs:
+			self._attrs = {}
+		for child in self._children:
+			if isinstance(child, Element):
+				child.detach_from_doc()
+				child.parent = None
+		self._children = []
+
+	def validation_error(self, msg, data=None, aname=None):
+		"""Called when a validation error occurred in this element.
+
+		msg
+			Message suitable for logging and reporting the nature of
+			the error.
+
+		data
+			The data that caused the error may be given in data.
+
+		aname
+			The attribute name may also be given indicating that the
+			offending data was in an attribute of the element and not
+			the element itself.
+
+		The default implementation simply calls the containing Document's
+		:meth:`Document.validation_error` method.  If the element is an
+		orphan then :class:`GIFTValidityError` is raised directly with *msg*.
+		"""
+		doc = self.get_document()
+		if doc:
+			doc.validation_error(msg, self, data, aname)
+		else:
+			raise GIFTValidityError(msg)
+
+	def sort_names(name_list):
+		name_list.sort()
+
+	def __eq__(self, other):
+		"""Compares another element with this one.
+
+		GIFTElement can only be compared with other Elements.
+		"""
+		if not isinstance(other, Element):
+			return NotImplemented
+		if self.giftname != other.giftname:
+			return False
+		self_attrs = self.get_attributes()
+		self_attr_names = list(dict.keys(self_attrs))
+		self.sort_names(self_attr_names)
+		other_attrs = other.get_attributes()
+		other_attr_names = list(dict.keys(other_attrs))
+		other.sort_names(other_attr_names)
+		if self_attr_names != other_attr_names:
+			return False
+		for i in range(len(self_attr_names)):
+			self_aname = self_attr_names[i]
+			if self_attrs[self_aname] != other_attrs[self_aname]:
+				return False
+		self_children = list(self.get_canonical_children())
+		other_children = list(other.get_canonical_children())
+		return self_children == other_children
+
+	def __ne__(self, other):
+		if not isinstance(other, Element):
+			return NotImplemented
+		return not self.__eq__(other)
+
+	def __bytes__(self):
+		"""Returns the GIFT element as a binary string.
+
+		The resulting string is encoded with UTF-8
+		"""
+		s = io.BytesIO()
+		for data in self.generate_gift():
+			s.write(data.encode('utf-8'))
+		return s.getvalue()
+
+	def deepcopy(self, parent=None):
+		pass
+
+	def get_base(self):
+		pass
+
+	def set_base(self, base):
+		pass
+
+	def write_gift_attributes(self, attributes, root=False, **kws):
+		"""Creates strings serialising the element's attributes
+
+		attributes
+			A list of character strings
+
+		escape_function
+			The function that will be used to escape character data.  The default is
+			:func:`escape_char_data`.  Previous pyslet version kept escape_function parameter
+			for backwards compatibility.
+
+		root
+			Indicates if this element should be treated as the root element.
+			By default there is no special action required but derived classes
+			may need to generate additional attributes, such as those that relate
+			to the namespaces or schema used by the element.
+
+		The attributes are generated as strings of the form 'name="value"' with values escaped
+		appropriately for serialised GIFT output.  The attributes are always sorted into a
+		predictable order (based on attribute name) to ensure that identical documents
+		produce identical output.
+		"""
+		attrs = self.get_attributes()
+		keys = list(dict.keys(attrs))
+		self.sort_names(keys)
+		for a in keys:
+			attributes.append('%s=%s' % (a, escape_char_data(attrs[a], True)))
+
+	def generate_gift(self, indent='', tab='\t', root=False, **kws):
+		"""A generator that yields serialised GIFT
+
+		This will need some thought to generate in GIFT format
+
+		https://github.com/swl10/pyslet/blob/master/pyslet/xml/structures.py#L2766
+
+		Assume escape_function is escape_char_data
+
+		indent (defaults to an empty string)
+			The string to use for passing any inherited indent, used in combination
+			with the tab parameter for pretty printing.  See below.
+
+		tab (defaults to '\\t')
+			Whether or not indentation will be used is determined by the tab parameter.
+			If it is empty then no pretty-printing is performed for the element, otherwise
+			the element will start with a line-feed followed by an inherited *indent* and
+			finally followed by the content of *tab*.  For example, if you prefer to have your
+			GIFT serialised with a 4-space indent then pass tab = '    '.
+
+			If the element is in a context where pretty printing is not allowed
+			(see :meth:`can_pretty_print`) then tab is ignored.
+
+		root (defaults to False)
+			Indicates if this is the root element of the document.  See
+			:meth:`write_gift_attributes`.
+
+		Yields character strings.
+		"""
+		pass
+
+	def write_gift(self):
+		"""Writes serialized GIFT to an output stream.
+
+		https://github.com/swl10/pyslet/blob/master/pyslet/xml/structures.py#L2850
+		"""
 		pass
 
 
@@ -890,6 +1487,8 @@ class Document(Node):
 				"""A generator that yields serialised XML
 
 				Assume UTF-8 encoding.
+
+				Assume escape_char_data is escape_function.
 
 				Yields character strings.
 				"""
