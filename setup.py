@@ -5,7 +5,7 @@ import sys
 import pyslet.info
 
 if sys.hexversion < 0x02060000:
-    logging.error("pyslet requires Python Version 2.6 (or greater)")
+    logging.error("pyslet requires Python Version 2.7 (or greater)")
 else:
     try:
         from setuptools import setup
@@ -27,7 +27,8 @@ else:
                     'pyslet.xml',
                     'pyslet.qtiv1',
                     'pyslet.qtiv2',
-                    'pyslet.odata2'],
+                    'pyslet.odata2',
+                    'pyslet.gift'],
           package_data={'pyslet': ['imsbltiv1p0_metadata.xml',
                                    'wsgi_metadata.xml',
                                    'unicode5_blocks.pck',

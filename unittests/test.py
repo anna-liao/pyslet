@@ -105,8 +105,8 @@ import test_xml_xsdatatypes
 all_tests.addTest(test_xml_xsdatatypes.suite())
 import test_gift_structures
 all_tests.addTest(test_gift_structures.suite())
-import test_gift_namespace
-all_tests.addTest(test_gift_namespace.suite())
+# import test_gift_namespace
+# all_tests.addTest(test_gift_namespace.suite())
 
 
 def suite():
