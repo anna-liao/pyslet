@@ -1,9 +1,9 @@
 #! /usr/bin/env python
 """This module implements the GIFT specification defined by Moodle """
 
-from . import (
-	giftns,
-	variables)
+import giftns
+import core
+# import variables
 
 
 class GIFTDocument(giftns.GIFTNSDocument):
@@ -31,16 +31,20 @@ class GIFTDocument(giftns.GIFTNSDocument):
 
 	classMap = {}
 
-	def __init__(self):
+	def __init__(self, **args):
+		giftns.GIFTNSDocument.__init__(self, defaultNS=core.GIFT_NAMESPACE, **args)
+		if isinstance(self.root, core.GIFTElement):
+			self.root.set_attribute((giftns.NO_NAMESPACE, ".ns"), None)
+
+	def get_element_class(self, name):
+		return GIFTDocument.classMap.get(name, GIFTDocument.classMap.get(name[0], None), giftns.GIFTNSElement)
+
+	def add_to_content_package(self):
 		pass
 
-	#def read(self, src):
-		"""
-		Parses a BytesIO object
-
-		Usage: read(src=BytesIO(input))
-		input is a b"" string
-		"""
-		#pass
-
-giftns.map_class_elements(GIFTDocument.classMap, variables)
+# giftns.map_class_elements(GIFTDocument.classMap, globals())
+# giftns.map_class_elements(GIFTDocument.classMap, variables)
+# giftns.map_class_elements(GIFTDocument.classMap, content)
+# giftns.map_class_elements(GIFTDocument.classMap, interactions)
+# giftns.map_class_elements(GIFTDocument.classMap, items)
+# giftns.map_class_elements(GIFTDocument.classMap, expressions)
