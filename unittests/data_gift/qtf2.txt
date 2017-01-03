@@ -1,0 +1,2 @@
+// question: 0 name: FalseStatement using {FALSE} style
+::FalseStatement about sun::The sun rises in the West.{FALSE}

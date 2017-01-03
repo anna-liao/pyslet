@@ -1,0 +1,2 @@
+// question: 0 name: TrueStatement using {T} style
+::TrueStatement about Grant::Grant was buried in a tomb in New York City.{T}

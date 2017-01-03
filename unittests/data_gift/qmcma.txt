@@ -1,0 +1,6 @@
+What two people are entombed in Grant's tomb? {
+   ~%-100%No one
+   ~%50%Grant
+   ~%50%Grant's wife
+   ~%-100%Grant's father
+}

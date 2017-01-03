@@ -1,7 +1,8 @@
 #! /usr/bin/env python
-
+import sys
+sys.path.append('..')
 import unittest
-from ..pyslet.gift import structures
+from pyslet.gift import structures
 
 
 def suite():
