@@ -5,9 +5,7 @@ import codecs
 import logging
 
 from copy import copy
-
-"""from .. import rfc2396 as uri"""
-from ..pep8 import MigratedClass
+from .py3 import character
 
 
 class GIFTError(Exception):
@@ -95,10 +93,12 @@ def is_s(c):
 	"""
 	return c is not None and c in "\x20\x09\x0A\x0D"
 
+
 """
 Variable definitions and functions below are for unicode and py2.
+"""
 
-name_start_char = CharClass(
+name_start_char = (
 	':', ('A', 'Z'), '_', ('a', 'z'), (character(0xc0), character(0xd6)),
 	(character(0xd8), character(0xf6)), (character(0xf8), character(0x02ff)),
 	(character(0x0370), character(0x037d)),
@@ -116,16 +116,17 @@ def is_name_start_char(c):
 
 # is_name_start_char = name_start_char.test  # noqa (def used by decorator)
 
-name_char = CharClass(name_start_char, '-', '.', ('0', '9'), character(0xb7),
-                    (character(0x0300), character(0x036f)),
-                    (character(0x203f), character(0x2040)))
+name_char = (name_start_char, '-', '.', ('0', '9'), character(0xb7),
+	(character(0x0300), character(0x036f)),
+	(character(0x203f), character(0x2040)))
 
 
 def is_name_char(c):
-    return name_char.test(c)
+	return name_char.test(c)
+
 
 def is_valid_name(name):
-	#Tests if name is a string matching production [5] Name
+	# Tests if name is a string matching production [5] Name
 	if name:
 		if not is_name_start_char(name[0]):
 			return False
@@ -135,7 +136,6 @@ def is_valid_name(name):
 		return True
 	else:
 		return False
-"""
 
 
 def escape_char_data(src, quote=False):
@@ -510,7 +510,7 @@ class Element(Node):
 		name starts with "GIFTATTR\_".
 		"""
 		if mname.startswith('GIFTATTR_'):
-			return mname[8:]
+			return mname[9:]
 		else:
 			return None
 
@@ -649,8 +649,8 @@ class Element(Node):
 			if value is None:
 				if name in self._attrs:
 					del self._attrs[name]
-				else:
-					self._attrs[name] = value
+			else:
+				self._attrs[name] = value
 
 	def get_attribute(self, name):
 		"""Gets the value of a single attribute as a string.
@@ -686,17 +686,17 @@ class Element(Node):
 				value = encoder(value)
 			return value
 
-	# def is_valid_name(self, value):
-	# 	"""Returns True if a character string is a valid NAME
+	def is_valid_name(self, value):
+		"""Returns True if a character string is a valid NAME
 
-	# 	This test can be done standalone using the module function of
-	# 	the same name (this implementation defaults to using that function).
-	# 	By checking validity in the context of an element derived classes
-	# 	may override this test.
+		This test can be done standalone using the module function of
+		the same name (this implementation defaults to using that function).
+		By checking validity in the context of an element derived classes
+		may override this test.
 
-	# 	This test is currently used only when checking IDs (see :meth:`set_id`)
-	# 	"""
-	# 	return is_valid_name(value)
+		This test is currently used only when checking IDs (see :meth:`set_id`)
+		"""
+		return is_valid_name(value)
 
 	def is_empty(self):
 		"""Whether this element *must* be empty.
@@ -1536,7 +1536,7 @@ class Document(Node):
 				pass
 
 
-class GIFTEntity(MigratedClass):
+class GIFTEntity():
 	"""Represents a GIFT entity.
 
 	Note: IGNORES URIs for now.
