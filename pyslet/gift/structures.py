@@ -1580,6 +1580,12 @@ class GIFTEntity(MigratedClass):
 		"""The current character position within the entity (first char is 1)"""
 		self.buff_text = ''
 		self.base_pos = None
+		if isinstance(src, str):
+			self.open_unicode(src)
+		elif isinstance(src, bytes):
+			self.open_string(src)
+		# elif src is not None:
+		# 	self.open_file(src)
 
 	chunk_size = io.DEFAULT_BUFFER_SIZE
 	"""Characters are read from the data_source in chunks.
@@ -1599,17 +1605,38 @@ class GIFTEntity(MigratedClass):
 		self.base_pos = self.char_source.tell()
 		self.reset()
 
-	def open_file(self, src):
-		"""Opens the entity from a file
+	def open_string(self, src):
+		"""Opens the entity from a binary string.
 
 		src
-			An existing (open) binary file.
+			A binary string.
+
+		The advantage of using this method instead of converting
+		the string to unicode and calling :py:meth:`open_unicode`
+		is that this method creates a unicode reader object to
+		parse the string instead of making a copy of it in memory.
 		"""
-		self.data_source = src
-		self.char_source = codecs.getreader('utf-8')(self.data_source)
+		self.data_source = io.BytesIO(src)
+		self.close_source = True
 		self.chunk = 1
+		self.char_source = codecs.getreader('utf-8')(self.data_source)
 		self.base_pos = self.char_source.tell()
 		self.reset()
+
+	# def open_file(self, src):
+	# 	"""Opens the entity from a file
+
+	# 	src
+	# 		An existing (open) binary file.
+	# 	"""
+	# 	self.data_source
+	# 	self.auto_detect_encoding(self.data_source)
+	# 	self.data_source = None
+	# 	self.char_source = src
+	# 	# self.char_source = codecs.getreader('utf-8')(self.data_source)
+	# 	self.chunk = 1
+	# 	self.base_pos = self.char_source.tell()
+	# 	self.reset()
 
 	def reset(self):
 		"""Resets an open entity
