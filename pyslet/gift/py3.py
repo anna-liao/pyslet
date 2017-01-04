@@ -32,3 +32,8 @@ def is_byte(arg):
 
 byte_value = ord
 join_bytes = b''.join
+range3 = range
+
+
+def dict_keys(d):
+	return dict.keys(d)

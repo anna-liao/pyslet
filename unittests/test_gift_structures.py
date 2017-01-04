@@ -33,6 +33,11 @@ def suite():
 # 			edges.append(max + 1)
 # 		return edges
 
+class NamedElement(structures.Element):
+	GIFTNAME = "test"
+	GIFTCONTENT = structures.ElementType.ElementContent
+
+
 def decode_yn(value):
 	return value == 'Yes'
 
@@ -114,6 +119,41 @@ class ReflectiveDocument(structures.Document):
 			return structures.Element
 
 
+class EmptyElement(structures.Element):
+	GIFTNAME = "empty"
+	GIFTCONTENT = structures.GIFTEmpty
+
+
+class ElementContent(structures.Element):
+	GIFTNAME = "elements"
+	GIFTCONTENT = structures.ElementType.ElementContent
+
+
+class MixedElement(structures.Element):
+	GIFTNAME = "mixed"
+	GIFTCONTENT = structures.ElementType.Mixed
+
+
+class IDElement(structures.Element):
+	GIFTName = "ide"
+	GIFTCONTENT = structures.GIFTEmpty
+	ID = "id"
+
+
+class BadElement:
+	GIFTNAME = "bad"
+
+
+class Elements:
+	named = NamedElement
+	reflective = ReflectiveElement
+	empty = EmptyElement
+	elements = ElementContent
+	mixed = MixedElement
+	id = IDElement
+	bad = BadElement
+
+
 class GIFTEntityTests(unittest.TestCase):
 
 	def test_constructor(self):
@@ -134,11 +174,6 @@ class GIFTEntityTests(unittest.TestCase):
 			e.next_char()
 		self.assertTrue(e.line_num == 3)
 		self.assertTrue(e.line_pos == 2)
-
-
-class NamedElement(structures.Element):
-	GIFTNAME = "test"
-	GIFTCONTENT = structures.ElementType.ElementContent
 
 
 class ElementTests(unittest.TestCase):
@@ -200,3 +235,125 @@ class ElementTests(unittest.TestCase):
 		self.assertTrue(e.eTest == {True: 2, False: 1}, "Attribute reflection with list: %s" % repr(e.eTest))
 		attrs = e.get_attributes()
 		self.assertTrue(attrs['etest'] == 'No Yes Yes', "Attribute not set correctly: %s" % repr(attrs['etest']))
+		try:
+			if e.ztest:
+				pass
+			self.fail("AttributeError required for undefined names")
+		except AttributeError:
+			pass
+		e.ztest = 1
+		if e.ztest:
+			pass
+		del e.ztest
+		try:
+			if e.ztest:
+				pass
+			self.fail("AttributeError required for undefined names after del")
+		except AttributeError:
+			pass
+		try:
+			self.assertTrue(e.fTest is None, "Missing attribute auto value not None")
+		except AttributeError:
+			self.fail("Missing attribute auto value: AttributeError")
+		e.fTest = 1
+		del e.fTest
+		try:
+			self.assertTrue(
+				e.fTest is None,
+				"Missing attribute auto value not None (after del)")
+		except AttributeError:
+			self.fail(
+				"Missing attribute auto value: AttributeError (after del)")
+
+	def test_child_elements(self):
+		"""Test child element behaviour"""
+		e = structures.Element(None)
+		e.set_giftname('test')
+		e.add_child(structures.Element, 'test1')
+		children = list(e.get_children())
+		self.assertTrue(len(children) == 1, "add_child failed to add child element")
+
+	def test_child_element_reflection(self):
+		"""Test child element cases using reflection"""
+		e = ReflectiveElement(None)
+		child1 = e.add_child(ReflectiveElement, 'test1')
+		self.assertTrue(e.child is child1, "Element not set by reflection")
+		children = list(e.get_children())
+		self.assertTrue(len(children) == 1 and children[0] is child1,
+			"add_child failed to add child element")
+
+		# Now create a second child, should return the same one due to model restriction
+		child2 = e.add_child(ReflectiveElement, 'test1')
+		self.assertTrue(e.child is child1 and child2 is child1, "Element model violated")
+		child3 = e.add_child(GenericElementA, 'test3')
+		self.assertTrue(e.generics[0] is child3, "Generic element")
+		child4 = e.add_child(GenericSubclassA, 'test4')
+		self.assertTrue(e.generics[1] is child4, "Generic sub-class element via method")
+		child5 = e.add_child(GenericSubclassB, 'test5')
+		self.assertTrue(e.GenericElementB is child5, "Generic sub-class element via member")
+
+	def test_data(self):
+		e = structures.Element(None)
+		self.assertTrue(e.is_mixed(), "Mixed default")
+		e.add_data('Hello')
+		self.assertTrue(e.get_value() == 'Hello', "Data value")
+		children = list(e.get_children())
+		self.assertTrue(len(children) == 1, "Data child not set")
+		self.assertTrue(children[0] == "Hello", "Data child not set correctly")
+
+	def test_empty(self):
+		e = EmptyElement(None)
+		self.assertFalse(e.is_mixed(), "EmptyElement is mixed")
+		self.assertTrue(e.is_empty(), "EmptyElement not empty")
+		try:
+			e.add_data('Hello')
+			self.fail("Data in EmptyElement")
+		except structures.GIFTValidityError:
+			pass
+		try:
+			e.add_child(structures.Element)
+			self.fail("Elements allows in EmptyElement")
+		except structures.GIFTValidityError:
+			pass
+
+	def test_element_content(self):
+		e = ElementContent(None)
+		self.assertFalse(e.is_mixed(), "ElementContent appears mixed")
+		self.assertFalse(e.is_empty(), "ElementContent appears empty")
+		try:
+			e.add_data('Hello')
+			self.fail("Data in ElementContent")
+		except structures.GIFTValidityError:
+			pass
+		# white space should silently be ignored.
+		e.add_data('  \n\r  \t')
+		children = list(e.get_children())
+		self.assertTrue(len(children) == 0, "Unexpected children")
+		# elements can be added
+		e.add_child(structures.Element)
+		children = list(e.get_children())
+		self.assertTrue(len(children) == 1, "Expected one child")
+
+	def test_mixed_content(self):
+		e = MixedElement(None)
+		self.assertTrue(e.is_mixed(), "MixedElement not mixed")
+		self.assertFalse(e.is_empty(), "MixedElement appears empty")
+		e.add_data('Hello')
+		self.assertTrue(e.get_value() == 'Hello', 'Mixed content with a single value')
+		e.add_child(structures.Element)
+		try:
+			e.get_value()
+		except structures.GIFTMixedContentError:
+			pass
+
+	def test_copy(self):
+		e1 = structures.Element(None)
+		e2 = e1.deepcopy()
+		self.assertTrue(isinstance(e2, structures.Element),
+			"deepcopy didn't make Element")
+		self.assertTrue(e1 == e2)
+		self.assertTrue(e1 is not e2)
+
+
+class DocumentTests(unittest.TestCase):
+	pass

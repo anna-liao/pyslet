@@ -3,9 +3,14 @@
 import io
 import codecs
 import logging
+import warnings
 
 from copy import copy
-from .py3 import character
+from .py3 import (
+	uspace,
+	uempty,
+	character)
+from types import MethodType
 
 
 class GIFTError(Exception):
@@ -93,6 +98,37 @@ def is_s(c):
 	"""
 	return c is not None and c in "\x20\x09\x0A\x0D"
 
+
+def collapse_space(data, smode=True, stest=is_s):
+	"""Returns data with all spaces collapsed to a single space.
+
+	smode
+		Determines the fate of any leading space, by default it is
+		True and leading spaces are ignored provided the string has
+		some non-space characters.
+
+	stest
+		You can override the test of what constitutes a space by
+		passing a function for stest, by default we use :func:`is_s`
+		and any value passed to stest should behave similarly.
+
+	Note on degenerate case: this function is intended to be called with
+	non-empty strings and will never *return* an empty string.  If there
+	is no data then a single space is returned (regardless of smode).
+	"""
+	result = []
+	for c in data:
+		if stest(c):
+			if not smode:
+				result.append(uspace)
+			smode = True
+		else:
+			smode = False
+			result.append(c)
+	if result:
+		return ''.join(result)
+	else:
+		return uspace
 
 """
 Variable definitions and functions below are for unicode and py2.
@@ -274,6 +310,11 @@ class Node():
 		name is used for two different purposes in the same XML
 		document.  Although confusing, this is allowed in XML schema."""
 		return None
+
+
+GIFTEmpty = ElementType.EMPTY
+GIFTMixedContent = ElementType.MIXED
+ElementContent = ElementType.ELEMENT_CONTENT
 
 
 class Element(Node):
@@ -749,7 +790,73 @@ class Element(Node):
 		'preserve' is in force.  Otherwise we remove any leading space and collapse all
 		all others to a single space character.
 		"""
-		pass
+		children = self.get_children()
+		# If there are no children there is nothing to do, so we don't catch StopIteration
+		try:
+			first_child = next(children)
+		except StopIteration:
+			return
+		e = self
+		while isinstance(e, Element):
+			spc = e.get_space()
+			if spc is not None:
+				if spc == 'preserve':
+					yield first_child
+					try:
+						while True:
+							yield next(children)
+						# will raise StopIteration and terminate method
+					except StopIteration:
+						return
+				else:
+					break
+			e = e.parent
+		try:
+			ichild = next(children)
+		except StopIteration:
+			# There was only one child
+			if isinstance(first_child, str):
+				first_child = collapse_space(first_child)
+			yield first_child
+			return
+		data = []
+		if isinstance(first_child, str):
+			data.append(first_child)
+			smode = True
+		else:
+			smode = False
+			yield first_child
+		while True:
+			if isinstance(ichild, str):
+				data.append(ichild)
+			else:
+				if data:
+					data_child = collapse_space(''.join(data), smode)
+					if not smode or data_child != uspace:
+						# ignore a leading space completely
+						yield data_child
+					data = []
+				yield ichild
+				smode = False
+			try:
+				ichild = next(children)
+				continue
+			except StopIteration:
+				if data:
+					data_child = collapse_space(''.join(data), smode)
+					if data_child == uspace:
+						# just white space, return empty string if we're the
+						# only child for consistency
+						if smode:
+							yield uempty
+						else:
+							# strip the whole last child
+							return
+					elif data_child[-1] == uspace:
+						# strip the trailing space from the last child
+						data_child = data_child[:-1]
+					yield data_child
+				return
 
 	def _find_factory(self, child_class):
 		if hasattr(self, child_class.__name__):
@@ -889,7 +996,7 @@ class Element(Node):
 				raise GIFTUnknownChild(child.giftname)
 			elif isinstance(factory, list):
 				match = False
-				for i in range3(len(factory)):
+				for i in range(len(factory)):
 					if factory[i] is child:
 						child.detach_from_doc()
 						child.parent = None
@@ -908,7 +1015,7 @@ class Element(Node):
 					(type(self).__name__, factory_name))
 		else:
 			match = False
-			for i in range3(len(self._children)):
+			for i in range(len(self._children)):
 				if self._children[i] is child:
 					child.detach_from_doc()
 					child.parent = None
@@ -1046,10 +1153,52 @@ class Element(Node):
 				self.validation_error("Unexpected data", data)
 
 	def content_changed(self):
-		pass
+		"""Notifies an element that its content has changed.
 
-	def generate_value(self):
-		pass
+		Called by the parser once the element's attribute values and
+		content have been parsed from the source.  Can be used to trigger
+		any internal validation required following manual changes to the
+		element.
+
+		The default implementation tidies up the list of children reducing
+		runs of data to a single string to make future operations simpler
+		and faster.
+		"""
+		new_children = []
+		data_children = []
+		for child in self._children:
+			if isinstance(child, str):
+				data_children.append(child)
+			elif len(data_children) == 1:
+				new_children.append(data_children[0])
+				new_children.append(child)
+				data_children = []
+			elif len(data_children) > 1:
+				new_children.append(''.join(data_children))
+				new_children.append(child)
+				data_children = []
+			else:
+				new_children.append(child)
+		if len(data_children) == 1:
+			new_children.append(data_children[0])
+		elif len(data_children) > 1:
+			new_children.append(''.join(data_children))
+		self._children = new_children
+
+	def generate_value(self, ignore_elements=False):
+		"""Generate strings representing the element's content
+
+		A companion method to :meth:`get_value` which is useful
+		when handling elements that contain a large amount of data).
+		For more information see :py:meth:`get_value`.
+		"""
+		if not self.is_mixed():
+			raise GIFTMixedContentError(self.__class__.__name__)
+		for child in self.get_children():
+			if isinstance(child, str):
+				yield str(child)
+			elif not ignore_elements:
+				raise GIFTMixedContentError(str(self))
 
 	def get_value(self, ignore_elements=False):
 		"""Returns a single object representing the element's content.
@@ -1069,7 +1218,7 @@ class Element(Node):
 		types or class instances that better represent the content of the element.
 		"""
 		# equivalent to join_characters in py2
-		return '.'.join(self.generate_value(ignore_elements))
+		return ''.join(self.generate_value(ignore_elements))
 
 	def set_value(self, value):
 		"""Replaces the content of the element.
@@ -1162,6 +1311,7 @@ class Element(Node):
 		else:
 			raise GIFTValidityError(msg)
 
+	@staticmethod
 	def sort_names(name_list):
 		name_list.sort()
 
@@ -1206,7 +1356,31 @@ class Element(Node):
 		return s.getvalue()
 
 	def deepcopy(self, parent=None):
-		pass
+		"""Creates a deep copy of this element.
+
+		parent
+			The parent node to attach the new element to.  If it is None
+			then a new orphan element is created.
+
+		This method mimics the process of serialisation and deserialisation
+		(without the need to generate markup).  As a result, element
+		attributes are serialised and deserialised to strings during the
+		copy process.
+		"""
+		if parent:
+			e = parent.add_child(self.__class__, self.get_giftname())
+		else:
+			e = self.__class__(None)
+		attrs = self.get_attributes()
+		for aname in dict.keys(attrs):
+			e.set_attribute(aname, attrs[aname])
+		for child in self.get_children():
+			if isinstance(child, str):
+				e.add_data(child)
+			else:
+				child.deepcopy(e)
+		e.content_changed()
+		return e
 
 	def get_base(self):
 		pass
