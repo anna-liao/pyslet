@@ -1,6 +1,7 @@
 #! /usr/bin/env
 
 import io
+import os
 import codecs
 import logging
 import warnings
@@ -10,6 +11,7 @@ from .py3 import (
 	uspace,
 	uempty,
 	character)
+from .. import rfc2396 as uri
 from types import MethodType
 
 
@@ -36,6 +38,11 @@ class GIFTMissingResourceError(GIFTError):
 	pass
 
 
+class GIFTMissingLocationError(GIFTError):
+	"""Raised when on create, read, or update when base_uri is None"""
+	pass
+
+
 class GIFTMixedContentError(GIFTError):
 	"""Raised by :meth:`Element.get_value`
 
@@ -47,6 +54,15 @@ class GIFTParentError(GIFTError):
 	"""Raised by :meth:`Element.attach_to_parent`
 
 	Indicates that the element was not an orphan."""
+	pass
+
+
+class GIFTUnsupportedSchemeError(GIFTError):
+	""":attr:`Document.base_uri` has an unsupported scheme
+
+	Currently only file schemes are supported for open operations.
+	For create and update operations, only file types are supported
+	"""
 	pass
 
 
@@ -310,6 +326,24 @@ class Node():
 		name is used for two different purposes in the same XML
 		document.  Although confusing, this is allowed in XML schema."""
 		return None
+
+	def add_child(self, child_class, name=None):
+		raise NotImplementedError
+
+	def get_base(self):
+		raise NotImplementedError
+
+	def set_base(self, base):
+		raise NotImplementedError
+
+	def get_lang(self):
+		raise NotImplementedError
+
+	def set_lang(self):
+		raise NotImplementedError
+
+	def get_space(self):
+		raise NotImplementedError
 
 
 GIFTEmpty = ElementType.EMPTY
@@ -1383,10 +1417,10 @@ class Element(Node):
 		return e
 
 	def get_base(self):
-		pass
+		raise NotImplementedError
 
 	def set_base(self, base):
-		pass
+		raise NotImplementedError
 
 	def write_gift_attributes(self, attributes, root=False, **kws):
 		"""Creates strings serialising the element's attributes
@@ -1479,9 +1513,10 @@ class Document(Node):
 		Must be an instance of :class:`pyslet.http.client.Client`.
 	"""
 
-	def __init__(self, root=None):
-
+	def __init__(self, root=None, base_uri=None, **kws):
+		base_uri = kws.get('baseURI', base_uri)
 		super().__init__()
+		self.base_uri = None
 		self.root = None
 		"""The root element or None if no root element has been created yet.
 		"""
@@ -1497,6 +1532,7 @@ class Document(Node):
 				raise ValueError
 			else:
 				self.root = root(self)
+		self.set_base(base_uri)
 		self.idTable = {}
 
 		def get_children(self):
@@ -1545,169 +1581,261 @@ class Document(Node):
 			from pyslet.gift.parser import GIFTParser
 			return GIFTParser(entity)
 
-			@classmethod
-			def get_element_class(cls, name):
-				"""Defaults to returning :class:`Element`.
+		@classmethod
+		def get_element_class(cls, name):
+			"""Defaults to returning :class:`Element`.
 
-				Derived classes override this method to enable the GIFT parser to create instances
-				of custom classes based on the document context and element name.
-				"""
-				return Element
+			Derived classes override this method to enable the GIFT parser to create instances
+			of custom classes based on the document context and element name.
+			"""
+			return Element
 
-			def add_child(self, child_class, name=None):
-				"""Creates the root element of the document.
+		def add_child(self, child_class, name=None):
+			"""Creates the root element of the document.
 
-				If there is already a root element it is detached from the document first using
-				:py:meth:`Element.detach_from_doc`.
+			If there is already a root element it is detached from the document first using
+			:py:meth:`Element.detach_from_doc`.
 
-				Unlike :meth:`Element.add_child` there are no model customization options.  The
-				root element is always found at :attr:`root`.
-				"""
-				if self.root:
-					self.root.detach_from_doc()
-					self.root.parent = None
-					self.root = None
-				child = child_class(self)
-				if name:
-					child.set_giftname(name)
-				self.root = child
-				return self.root
+			Unlike :meth:`Element.add_child` there are no model customization options.  The
+			root element is always found at :attr:`root`.
+			"""
+			if self.root:
+				self.root.detach_from_doc()
+				self.root.parent = None
+				self.root = None
+			child = child_class(self)
+			if name:
+				child.set_giftname(name)
+			self.root = child
+			return self.root
 
-			def get_space(self):
-				"""Returns the default space policy for the document.
+		def set_base(self, base_uri):
+			"""Sets the base_uri of the document to the given URI.
 
-				By default we return None, indicating that no policy is in force.
-				Derived documents can override this behaviour to return either "preserve"
-				or "default" to affect space handling.
-				"""
-				raise NotImplementedError
+			base_uri
+				An object that can be passed to its constructor.
 
-			def validation_error(self, msg, element, data=None, aname=None):
-				"""Called when a validation error is triggered.
-
-				msg
-					contains a brief message suitable for describing the error
-					in a log file.
-				element
-					the element in which the validation error occurred
-					data, aname
-
-				See :meth:`Element.validation_error`.
-
-				Prior to raising :class:`GIFTValidityError` this method logs a
-				suitable message at WARN level."""
-				if aname:
-					logging.warning("%s (in %s.%s) %s", msg, aname,
-						"" if data is None else repr(data))
+			Relative file paths are resolved relative to the current working
+			directory immediately and the absolute URI is recorded as the
+			document's *base_uri*.
+			"""
+			if base_uri is None:
+				self.base_uri = None
+			else:
+				if isinstance(base_uri, uri.URI):
+					self.base_uri = base_uri
 				else:
-					logging.warning("%s (in %s) %s", msg, element.giftname,
-						"" if data is None else repr(data))
-				raise GIFTValidityError("%s (in %s)" % (msg, element.giftname))
+					self.base_uri = uri.URI.from_octets(base_uri)
+				if not self.base_uri.is_absolute():
+					cwd = uri.URI.from_path(
+						os.path.join(os.getcwd(), os.curdir))
+					self.base_uri = self.base_uri.resolve(cwd)
 
-			def read(self, src=None, **kws):
-				"""Reads this document, parsing it from a source stream.
+		def get_base(self):
+			"""Returns a string representation of the document's base_uri."""
+			if self.base_uri is None:
+				return None
+			else:
+				return str(self.base_uri)
 
-				With no arguments the document is read from the
-				:py:attr:`base_uri` which must have been specified on
-				construction or with a call to the :py:meth:`set_base` method.
-				src (defaults to None)
+		def get_space(self):
+			"""Returns the default space policy for the document.
 
-				You can override the document's base URI by passing a value
-				for *src* which may be an instance of :py:class:`GIFTEntity`
-				or a file-like object suitable for passing to
-				:meth:`read_from_stream`.
-				"""
-				if src:
-					# Read from this stream, ignore base_uri
-					if isinstance(src, GIFTEntity):
-						self.read_from_entity(src)
-					else:
-						self.read_from_stream(src)
+			By default we return None, indicating that no policy is in force.
+			Derived documents can override this behaviour to return either "preserve"
+			or "default" to affect space handling.
+			"""
+			raise NotImplementedError
+
+		def validation_error(self, msg, element, data=None, aname=None):
+			"""Called when a validation error is triggered.
+
+			msg
+				contains a brief message suitable for describing the error
+				in a log file.
+			element
+				the element in which the validation error occurred
+				data, aname
+
+			See :meth:`Element.validation_error`.
+
+			Prior to raising :class:`GIFTValidityError` this method logs a
+			suitable message at WARN level."""
+			if aname:
+				logging.warning("%s (in %s.%s) %s", msg, aname,
+					"" if data is None else repr(data))
+			else:
+				logging.warning("%s (in %s) %s", msg, element.giftname,
+					"" if data is None else repr(data))
+			raise GIFTValidityError("%s (in %s)" % (msg, element.giftname))
+
+		def register_element(self, element):
+			"""Registers an element's ID
+
+			If the element has an ID attribute it is added to the internal
+			ID table.  If the ID already exists :class:`GIFTIDClashError` is
+			raised.
+			"""
+			if element.id in self.idTable:
+				raise GIFTIDClashError
+			else:
+				self.idTable[element.id] = element
+
+		def unregister_element(self, element):
+			"""Removes an element's ID
+
+			If the element has a uniquely defined ID it is removed from the
+			internal ID table.  Called prior to detaching the element from
+			the document.
+			"""
+			if element.id:
+				del self.idTable[element.id]
+
+		def get_element_by_id(self, id):
+			"""Returns the element with a given ID
+
+			Returns None if the ID is not the ID of any element.
+			"""
+			return self.idTable.get(id, None)
+
+		def get_unique_id(self, base_str=None):
+			"""Generates a random element ID that is not yet defined
+
+			base_str
+				A suggested prefix (defaults to None)
+			"""
+			if not base_str:
+				base_str = '%X' % random.randint(0, 0xFFFF)
+			id_str = base_str
+			id_extra = 0
+			while id_str in self.idTable:
+				if not id_extra:
+					id_extra = random.randint(0, 0xFFFF)
+				id_str = '%s-%X' % (base_str, id_extra)
+				id_extra = id_extra + 1
+			return id_str
+
+		def read(self, src=None, **kws):
+			"""Reads this document, parsing it from a source stream.
+
+			With no arguments the document is read from the
+			:py:attr:`base_uri` which must have been specified on
+			construction or with a call to the :py:meth:`set_base` method.
+			src (defaults to None)
+
+			You can override the document's base URI by passing a value
+			for *src* which may be an instance of :py:class:`GIFTEntity`
+			or a file-like object suitable for passing to
+			:meth:`read_from_stream`.
+			"""
+			if src:
+				# Read from this stream, ignore base_uri
+				if isinstance(src, GIFTEntity):
+					self.read_from_entity(src)
 				else:
-					with GIFTEntity() as e:
-						self.read_from_entity(e)
+					self.read_from_stream(src)
+			elif self.base_uri is None:
+				raise GIFTMissingLocationError
+			else:
+				with GIFTEntity() as e:
+					self.read_from_entity(e)
 
-			def read_from_stream(self, src):
-				"""Reads this document from a stream
+		def read_from_stream(self, src):
+			"""Reads this document from a stream
 
-				src
-					Any object that can be passed to :class:`GIFTEntity`'s
-					constructor.
-				"""
-				self.data = []
-				e = GIFTEntity()
-				self.read_from_entity(e)
+			src
+				Any object that can be passed to :class:`GIFTEntity`'s
+				constructor.
+			"""
+			self.data = []
+			e = GIFTEntity()
+			self.read_from_entity(e)
 
-			def read_from_entity(self, e):
-				"""Reads this document from an entity
+		def read_from_entity(self, e):
+			"""Reads this document from an entity
 
-				e
-					A :class:`GIFTEntity` instance.
+			e
+				A :class:`GIFTEntity` instance.
 
-				The document is read from the current position in the entity.
-				"""
-				self.data = []
-				parser = self.GIFTParser(e)
-				parser.parse_document(self)
+			The document is read from the current position in the entity.
+			"""
+			self.data = []
+			parser = self.GIFTParser(e)
+			parser.parse_document(self)
+			if e.location is not None:
+				# update our base_uri from the entity
+				self.set_base(e.location)
 
-			def create(self, **kws):
-				"""Creates the Document.
+		def create(self, **kws):
+			"""Creates the Document.
 
-				Only documents with file type baseURIs are supported.
-				"""
-				pass
+			Only documents with file type baseURIs are supported.
+			"""
+			pass
 
-			def generate_gift(self):
-				"""A generator that yields serialised XML
+		def generate_gift(self):
+			"""A generator that yields serialised XML
 
-				Assume UTF-8 encoding.
+			Assume UTF-8 encoding.
 
-				Assume escape_char_data is escape_function.
+			Assume escape_char_data is escape_function.
 
-				Yields character strings.
-				"""
-				if self.root:
-					for s in self.root.generate_gift(root=True):
-						yield s
+			Yields character strings.
+			"""
+			if self.root:
+				for s in self.root.generate_gift(root=True):
+					yield s
 
-			def write_gift(self, writer):
-				"""Writes serialized GIFT to an output stream
+		def write_gift(self, writer):
+			"""Writes serialized GIFT to an output stream
 
-				writer
-					A file or file-like object operating in binary mode.
+			writer
+				A file or file-like object operating in binary mode.
 
-				The other arguments follow the same pattern as :meth:`generate_gift` which
-				this method uses to create the output which is always UTF-8 encoded.
-				"""
-				for s in self.generate_gift():
-					writer.write(s)
+			The other arguments follow the same pattern as :meth:`generate_gift` which
+			this method uses to create the output which is always UTF-8 encoded.
+			"""
+			for s in self.generate_gift():
+				writer.write(s)
 
-			def update(self, **kws):
-				"""Updates the Document.
+		def update(self, **kws):
+			"""Updates the Document.
 
-				Update outputs the document as a GIFT stream.
-				The stream is written to the base_uri which must already exist.
-				"""
-				pass
+			Update outputs the document as a GIFT stream.
+			The stream is written to the base_uri which must already exist.
+			"""
+			if self.base_uri is None:
+				raise GIFTMissingLocationError
+			elif isinstance(self.base_uri, uri.FileURL):
+				fpath = self.base_uri.get_pathname()
+				if not os.path.isfile(fpath):
+					raise GIFTMissingResourceError(fpath)
+				f = open(fpath, 'wb')
+				try:
+					self.write_gift(f)
+				finally:
+					f.close()
+			else:
+				raise GIFTUnsupportedSchemeError(self.base_uri.scheme)
 
-			def diff_string(self, other_doc, before=10, after=5):
-				"""Compares GIFT documents
+		def diff_string(self, other_doc, before=10, after=5):
+			"""Compares GIFT documents
 
-				other_doc
-					Another :class:`Document` instance to compare with.
+			other_doc
+				Another :class:`Document` instance to compare with.
 
-				before (default 10)
-					Number of lines before the first difference to output
+			before (default 10)
+				Number of lines before the first difference to output
 
-				after (default 5)
-					Number of lines after the first difference to output
+			after (default 5)
+				Number of lines after the first difference to output
 
-				The two documents are converted to character strings and then
-				compared line by line until a difference is found.  The result
-				is suitable for logging or error reporting.  Used mainly to make the
-				output of unittests easier to understand.
-				"""
-				pass
+			The two documents are converted to character strings and then
+			compared line by line until a difference is found.  The result
+			is suitable for logging or error reporting.  Used mainly to make the
+			output of unittests easier to understand.
+			"""
+			pass
 
 
 class GIFTEntity():

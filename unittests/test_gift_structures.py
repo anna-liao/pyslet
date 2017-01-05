@@ -17,6 +17,8 @@ def suite():
 		unittest.makeSuite(DocumentTests, 'test')
 	))
 
+TEST_DATA_DIR = os.path.join(
+	os.path.split(os.path.abspath(__file__))[0], 'data_gift')
 
 # class GIFTCharacterTests(unittest.TestCase):
 
@@ -370,4 +372,28 @@ class DocumentTests(unittest.TestCase):
 		shutil.rmtree(self.d, True)
 
 	def test_constructor(self):
-		pass
+		d = structures.Document()
+		self.assertTrue(d.root is None, 'root on construction')
+		self.assertTrue(d.get_base() is None, 'base set on construction')
+	# 	d = structures.Document(root=structures.Element)
+	# 	self.assertTrue(isinstance(d.root, structures.Element),
+	# 		'root not created on construction')
+	# 	self.assertTrue(d.root.get_document() is d,
+	# 		'root not linked to document')
+
+	# def test_base(self):
+	# 	"""Test the use of a file path on construction"""
+	# 	fpath = os.path.abspath('fpath.txt')
+	# 	d = structures.Document()
+	# 	self.assertTrue(d.root is None, 'root on construction')
+	# 	d = structures.Document(root=structures.Element)
+	# 	self.assertTrue(isinstance(d.root, structures.Element),
+	# 		'root not created on construction')
+
+	# def test_read_file(self):
+	# 	"""Test the reading of the Document from the file system"""
+	# 	os.chdir(TEST_DATA_DIR)
+	# 	d = structures.Document()
+	# 	d.read()
+	# 	root = d.root
+	# 	self.assertTrue(isinstance(root, structures.Element))
