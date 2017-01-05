@@ -2,12 +2,15 @@
 
 import io
 import os
+import os.path
 import codecs
 import logging
+import random
 import warnings
 
 from copy import copy
 from .py3 import (
+	join_characters,
 	uspace,
 	uempty,
 	character)
@@ -283,6 +286,8 @@ class ElementType(object):
 		else:
 			return True
 
+_gift_base = 'gift:base'
+
 
 class Node():
 	"""Base class for Element and Document shared attributes.
@@ -294,7 +299,6 @@ class Node():
 	"""
 	def __init__(self, parent=None):
 		self.parent = parent
-		super().__init__()
 		"""The parent of this element, for GIFT documents this attribute is
 		used as a sentinel to simplify traversal of the hierarchy and is set
 		to None."""
@@ -446,50 +450,59 @@ class Element(Node):
 				# the resulting object behaves like this...
 				element.title == 'Q1'    # True
 
-		GIFTATTR_aname=(<string>, decode_function, encode_function, type)
+	GIFTATTR_aname=(<string>, decode_function, encode_function, type)
 
-			When GIFT attribute values are parsed from tags the option *type*
-			component of the tuple descriptor can be used to indicate a multi-valued
-			attribute.  For example, you might want to use a multi-valued mapping for
-			GIFT attributes defined using one of the plural forms, IDREFS, ENTITIES, and
-			NMTOKENS.
+		When GIFT attribute values are parsed from tags the option *type*
+		component of the tuple descriptor can be used to indicate a multi-valued
+		attribute.  For example, you might want to use a multi-valued mapping for
+		GIFT attributes defined using one of the plural forms, IDREFS, ENTITIES, and
+		NMTOKENS.
 
-			If the *type* value is not None then the GIFT attribute value is first split
-			by white-space, as per the GIFT specification, and then the decode function
-			is applied to each resulting component.  The instance attribute is then set
-			depending on the value of the *type*:
+		If the *type* value is not None then the GIFT attribute value is first split
+		by white-space, as per the GIFT specification, and then the decode function
+		is applied to each resulting component.  The instance attribute is then set
+		depending on the value of the *type*:
 
-			list
-				The instance attribute becomes a list, for example::
+		list
+			The instance attribute becomes a list, for example::
 
-				// source GIFT
-				{ =yellow # right; good! ~red # wrong, it's yellow ~blue # wrong, it's yellow}
+			// source GIFT
+			{ =yellow # right; good! ~red # wrong, it's yellow ~blue # wrong, it's yellow}
 
-				# class attribute definition
-				XMLATTR_response = ('response', str, str, list)
+			# class attribute definition
+			XMLATTR_response = ('response', str, str, list)
 
-				# resulting object behaves like this...
-				element.response == ['=yellow', '#', 'right;', 'good!', '~red', '#', 'wrong,',
-									'it's', 'yellow', '~blue', '#', 'wrong,', 'it's', 'yellow']
+			# resulting object behaves like this...
+			element.response == ['=yellow', '#', 'right;', 'good!', '~red', '#', 'wrong,',
+								'it's', 'yellow', '~blue', '#', 'wrong,', 'it's', 'yellow']
 
-			NOTE: Ignoring support for dictionary mapping for now.
+		NOTE: ignoring dictionary mapping for now.
 
-			When serialising to GIFT the reverse transformations are performed using the encode
-			functions and the type (plain or list) of the attribute's *current* value.  The declared
-			multi-valued type is ignored.  For dictionary values the order of the output values may
-			not be the same as the order originally read from the GIFT input.
+		When serialising to GIFT the reverse transformations are performed using the encode
+		functions and the type (plain or list) of the attribute's *current* value.  The declared
+		multi-valued type is ignored.  For dictionary values the order of the output values may
+		not be the same as the order originally read from the GIFT input.
 
-			Warning: Empty lists result in GIFT attribute values that are present but with empty strings.
-			If you wish to omit these attributes in the output GIFT you must set the attribute value to None.
+		Warning: Empty lists result in GIFT attribute values that are present but with empty strings.
+		If you wish to omit these attributes in the output GIFT you must set the attribute value to None.
 
-			Implementation note: internally, the GIFTATTR_* descriptors are parsed into two mappings the first
-			time they are needed.  The forward map maps GIFT attribute names onto tuples of:
+	Some element specifications define large numbers of optional attributes and it is inconvenient to write
+	constructors to initialise these members in each instance and possibly wasteful of memory if a document
+	contains large numbers of such elements.
 
-				(<python attribute name>, decode_function, type)
+	To obviate the need for optional attributes to be present in every instance an implementation of
+	__getattr__ is provided that will ensure that element.aname returns None if 'aname' is the target of
+	an attribute mapping rule, regardless of whether or not the attribute has actually been set for the
+	instance.
 
-			The reverse map maps python attribute names onto a tuple of:
+		Implementation note: internally, the GIFTATTR_* descriptors are parsed into two mappings the first
+		time they are needed.  The forward map maps GIFT attribute names onto tuples of:
 
-				(<gift attribute name>, encode_function)
+			(<python attribute name>, decode_function, type)
+
+		The reverse map maps python attribute names onto a tuple of:
+
+			(<gift attribute name>, encode_function)
 
 	GIFT attribute names may contain characters that are not legal in Python syntax but automated attribute
 	processing is still supported for these attributes even though the declaration cannot be written into
@@ -510,6 +523,13 @@ class Element(Node):
 				self.set_giftname(self.GIFTNAME)
 			else:
 				self.set_giftname(None)
+		else:
+			warnings.warn(
+				"Element: passing name to constructor is deprecated (%s);"
+				"use set_giftname instead" % name)
+			import traceback
+			traceback.print_stack()
+			self.giftname = name
 		self.id = None
 		self._attrs = {}
 		self._children = []
@@ -668,12 +688,12 @@ class Element(Node):
 			name, encoder = desc
 			value = getattr(self, attr_name, None)
 			if isinstance(value, list):
-				value = ' '.join(encoder(v) for v in value)
+				value = uspace.join(encoder(v) for v in value)
 			elif isinstance(value, dict):
 				lvalue = []
 				for key, freq in dict.items(value):
 					lvalue = lvalue + [encoder(key)] * freq
-				value = ' '.join(sorted(lvalue))
+				value = uspace.join(sorted(lvalue))
 			elif value is not None:
 				value = encoder(value)
 			if value is not None:
@@ -751,12 +771,12 @@ class Element(Node):
 			armap = self._armap()
 			unusedName, encoder = armap[attr_name]
 			if isinstance(value, list):
-				value = ' '.join(encoder(v) for v in value)
+				value = uspace.join(encoder(v) for v in value)
 			elif isinstance(value, dict):
 				lvalue = []
 				for key, freq in dict.items(value):
 					lvalue = lvalue + [encoder(key)] * freq
-				value = ' '.join(sorted(lvalue))
+				value = uspace.join(sorted(lvalue))
 			else:
 				value = encoder(value)
 			return value
@@ -853,6 +873,7 @@ class Element(Node):
 				first_child = collapse_space(first_child)
 			yield first_child
 			return
+		# Collapse strings to a single string entry and collapse spaces
 		data = []
 		if isinstance(first_child, str):
 			data.append(first_child)
@@ -1061,17 +1082,20 @@ class Element(Node):
 
 	def find_children(self, child_class, child_list, max=None):
 		"""Finds children of a given class"""
-		pass
+		warnings.warn(
+			"Element.find_children is deprecated, use "
+			"find_children_depth_first instead", DeprecationWarning,
+			stacklevel=3)
 
 	def find_children_breadth_first(self, child_class, sub_match=True,
 		max_depth=1000, **kws):
 		"""Generates all children of a given class"""
-		pass
+		raise NotImplementedError
 
 	def find_children_depth_first(self, child_class, sub_match=True,
 		max_depth=1000, **kws):
 		"""Generates all children of a given class"""
-		pass
+		raise NotImplementedError
 
 	def find_parent(self, parent_class):
 		"""Finds the first parent of the given class.
@@ -1252,7 +1276,7 @@ class Element(Node):
 		types or class instances that better represent the content of the element.
 		"""
 		# equivalent to join_characters in py2
-		return ''.join(self.generate_value(ignore_elements))
+		return join_characters(self.generate_value(ignore_elements))
 
 	def set_value(self, value):
 		"""Replaces the content of the element.
@@ -1417,9 +1441,109 @@ class Element(Node):
 		return e
 
 	def get_base(self):
-		raise NotImplementedError
+		"""Returns the value of the gift:base attribute as a string."""
+		return self._attrs.get(_gift_base, None)
 
 	def set_base(self, base):
+		"""Set the value of the gift:base attribute from a string.
+
+		Changing the base of an element affects the interpretation of
+		all relative URIs in this element and its children."""
+		if base is None:
+			self._attrs.pop(_gift_base, None)
+		else:
+			self._attrs[_gift_base] = str(base)
+
+	def resolve_base(self):
+		"""Returns the base of the current element.
+
+		The URI is calculated using any gift:base values of the element
+		or its ancestors and ultimately relative to the base URI of the
+		document itself.
+
+		If the element is not contained by a Document, or the document
+		does not have a fully specified base_uri then the return result
+		may be a relative path or even None, if no base information is
+		available.
+
+		The return result is always None or a character string, such as
+		would be obtained from the gift:base attribute.
+		"""
+		baser = self
+		base_uri = None
+		while baser:
+			rebase = baser.get_base()
+			if base_uri:
+				# TODO: add the current document
+				if rebase:
+					base_uri = base_uri.resolve(rebase)
+				# base_uri = urlparse.urljoin(rebase, base_uri)
+			elif rebase:
+				base_uri = uri.URI.from_octets(rebase)
+			baser = baser.parent
+		return None if base_uri is None else str(base_uri)
+
+	def resolve_uri(self, uriref):
+		"""Resolves a URI reference in the current context.
+
+		uriref
+			A :class:`pyslet.rfc2396.URI` instance or a string
+			that one can be parsed from.
+
+		The argument is resolved relative to the gift:base values
+		of the element's ancestors and ultimately relative to the
+		document's base.  Their result may still be a relative URI,
+		there may be no base set or the base may only be known in
+		relative terms.
+		"""
+		if not isinstance(uriref, uri.URI):
+			uriref = uri.URI.from_octets(uriref)
+		base_uri = self.resolve_base()
+		if base_uri:
+			return uriref.resolve(base_uri)
+		else:
+			return uriref
+
+	def relative_uri(self, href):
+		"""Returns href expressed relative to the element's base.
+
+		href
+			A :class:`pyslet.rfc2396.URI` instance or a string
+			that one can be parsed from.
+
+		If href is already a relative URI then it is converted to a
+		fully specified URL by interpreting it as being the URI of
+		a *file* expressed relative to the current working directory.
+
+		For example, if the Document was loaded from:
+
+			/path/to/repo/catalog.txt
+
+		and *e* is an element in that document then::
+
+			e.relative_uri('/path/to/repo/smiley.gif')
+
+		would return a URI instance representing relative URI::
+
+			'smiley.gif'
+
+		If the element does not have a fully-specified base path then
+		the result is a fully-specified path itself.
+		"""
+		if not isinstance(href, uri.URI):
+			href = uri.URI.from_octets(href)
+		if not href.is_absolute():
+			href = href.resolve(uri.URI.from_path(os.getcwd()))
+		base = self.resolve_base()
+		if base is not None:
+			return href.relative(base)
+		else:
+			return href
+
+	def get_lang(self):
+		raise NotImplementedError
+
+	def set_lang(self, lang):
 		raise NotImplementedError
 
 	def write_gift_attributes(self, attributes, root=False, **kws):
@@ -1479,14 +1603,81 @@ class Element(Node):
 
 		Yields character strings.
 		"""
-		pass
+		raise NotImplementedError
 
 	def write_gift(self):
 		"""Writes serialized GIFT to an output stream.
 
 		https://github.com/swl10/pyslet/blob/master/pyslet/xml/structures.py#L2850
 		"""
-		pass
+		raise NotImplementedError
+
+
+class GIFTContentParticle(object):
+	def __init__(self):
+		raise NotImplementedError
+
+	def build_particle_maps(self, exit_particles):
+		raise NotImplementedError
+
+	def seek_particles(self, pmap):
+		raise NotImplementedError
+
+	def add_particles(self, src_map, pmap):
+		raise NotImplementedError
+
+	def is_deterministic(self, pmap):
+		raise NotImplementedError
+
+
+class GIFTNameParticle(GIFTContentParticle):
+	def __init__(self):
+		raise NotImplementedError
+
+	def build_particle_maps(self, exit_particles):
+		raise NotImplementedError
+
+	def seek_particles(self, pmap):
+		raise NotImplementedError
+
+	def is_deterministic(self):
+		raise NotImplementedError
+
+
+class GIFTChoiceList(GIFTContentParticle):
+	def __init__(self):
+		raise NotImplementedError
+
+	def build_particle_maps(self, exit_particles):
+		raise NotImplementedError
+
+	def seek_particles(self, pmap):
+		raise NotImplementedError
+
+	def is_deterministic(self):
+		raise NotImplementedError
+
+
+class GIFTSequenceList(GIFTContentParticle):
+	def __init__(self):
+		raise NotImplementedError
+
+	def build_particle_maps(self, exit_particles):
+		raise NotImplementedError
+
+	def seek_particles(self, pmap):
+		raise NotImplementedError
+
+	def is_deterministic(self):
+		raise NotImplementedError
+
+
+class GIFTAttributeDefinition(object):
+	"""https://github.com/swl10/pyslet/blob/master/pyslet/xml/structures.py#L3103
+
+	"""
+	def __init__(self):
+		raise NotImplementedError
 
 
 class Document(Node):
@@ -1535,313 +1726,335 @@ class Document(Node):
 		self.set_base(base_uri)
 		self.idTable = {}
 
-		def get_children(self):
-			"""Yields the root element"""
-			if self.root:
-				yield self.root
+	def get_children(self):
+		"""Yields the root element"""
+		if self.root:
+			yield self.root
 
-		def __bytes__(self):
-			"""Returns the GIFT document as a string"""
-			pass
-			"""
-			s = io.BytesIO()
-			self.write_txt(s, escape_char_data7)
-			return s.getvalue()
-			"""
+	def __bytes__(self):
+		"""Returns the GIFT document as a string"""
+		"""
+		s = io.BytesIO()
+		self.write_txt(s, escape_char_data7)
+		return s.getvalue()
+		"""
 
-		def __unicode__(self):
-			"""Returns GIFT document as unicode string"""
-			pass
-			"""
-			s = io.StringIO()
-			for data in self.generate_txt(escape_char_data):
-				s.write(data)
-			return s.getvalue()
-			"""
+	def __unicode__(self):
+		"""Returns GIFT document as unicode string"""
+		pass
+		"""
+		s = io.StringIO()
+		for data in self.generate_txt(escape_char_data):
+			s.write(data)
+		return s.getvalue()
+		"""
 
-		def GIFTParser(self, entity):
-			"""Creates a parser for this document
+	def GIFTParser(self, entity):
+		"""Creates a parser for this document
 
-			https://github.com/swl10/pyslet/blob/master/pyslet/xml/structures.py#L623
+		https://github.com/swl10/pyslet/blob/master/pyslet/xml/structures.py#L623
 
-			entity
-				The entity to parse the document from
+		entity
+			The entity to parse the document from
 
-			The default implementation creates an instance of :class:`GIFTParser`.
+		The default implementation creates an instance of :class:`GIFTParser`.
 
-			This method allows some document classes to override the parser used to parse them.
-			This method is only used when parsing existing document instances (see :py:meth:`read`
-			for more information).
+		This method allows some document classes to override the parser used to parse them.
+		This method is only used when parsing existing document instances (see :py:meth:`read`
+		for more information).
 
-			Classes that override this method may still register themselves with
-			:py:func:`register_doc_class` but if they do then the default :py:class:`GIFTParser` object
-			will be used as automatic detection of document class is done by the parser itself
-			based on the information in the prolog (and/or first element).
-			"""
-			from pyslet.gift.parser import GIFTParser
-			return GIFTParser(entity)
+		Classes that override this method may still register themselves with
+		:py:func:`register_doc_class` but if they do then the default :py:class:`GIFTParser` object
+		will be used as automatic detection of document class is done by the parser itself
+		based on the information in the prolog (and/or first element).
+		"""
+		from pyslet.gift.parser import GIFTParser
+		return GIFTParser(entity)
 
-		@classmethod
-		def get_element_class(cls, name):
-			"""Defaults to returning :class:`Element`.
+	@classmethod
+	def get_element_class(cls, name):
+		"""Defaults to returning :class:`Element`.
 
-			Derived classes override this method to enable the GIFT parser to create instances
-			of custom classes based on the document context and element name.
-			"""
-			return Element
+		Derived classes override this method to enable the GIFT parser to create instances
+		of custom classes based on the document context and element name.
+		"""
+		return Element
 
-		def add_child(self, child_class, name=None):
-			"""Creates the root element of the document.
+	def add_child(self, child_class, name=None):
+		"""Creates the root element of the document.
 
-			If there is already a root element it is detached from the document first using
-			:py:meth:`Element.detach_from_doc`.
+		If there is already a root element it is detached from the document first using
+		:py:meth:`Element.detach_from_doc`.
 
-			Unlike :meth:`Element.add_child` there are no model customization options.  The
-			root element is always found at :attr:`root`.
-			"""
-			if self.root:
-				self.root.detach_from_doc()
-				self.root.parent = None
-				self.root = None
-			child = child_class(self)
-			if name:
-				child.set_giftname(name)
-			self.root = child
-			return self.root
+		Unlike :meth:`Element.add_child` there are no model customization options.  The
+		root element is always found at :attr:`root`.
+		"""
+		if self.root:
+			self.root.detach_from_doc()
+			self.root.parent = None
+			self.root = None
+		child = child_class(self)
+		if name:
+			child.set_giftname(name)
+		self.root = child
+		return self.root
 
-		def set_base(self, base_uri):
-			"""Sets the base_uri of the document to the given URI.
+	def set_base(self, base_uri):
+		"""Sets the base_uri of the document to the given URI.
 
-			base_uri
-				An object that can be passed to its constructor.
+		base_uri
+			An object that can be passed to its constructor.
 
-			Relative file paths are resolved relative to the current working
-			directory immediately and the absolute URI is recorded as the
-			document's *base_uri*.
-			"""
-			if base_uri is None:
-				self.base_uri = None
+		Relative file paths are resolved relative to the current working
+		directory immediately and the absolute URI is recorded as the
+		document's *base_uri*.
+		"""
+		if base_uri is None:
+			self.base_uri = None
+		else:
+			if isinstance(base_uri, uri.URI):
+				self.base_uri = base_uri
 			else:
-				if isinstance(base_uri, uri.URI):
-					self.base_uri = base_uri
-				else:
-					self.base_uri = uri.URI.from_octets(base_uri)
-				if not self.base_uri.is_absolute():
-					cwd = uri.URI.from_path(
-						os.path.join(os.getcwd(), os.curdir))
-					self.base_uri = self.base_uri.resolve(cwd)
+				self.base_uri = uri.URI.from_octets(base_uri)
+			if not self.base_uri.is_absolute():
+				cwd = uri.URI.from_path(
+					os.path.join(os.getcwd(), os.curdir))
+				self.base_uri = self.base_uri.resolve(cwd)
 
-		def get_base(self):
-			"""Returns a string representation of the document's base_uri."""
-			if self.base_uri is None:
-				return None
-			else:
-				return str(self.base_uri)
+	def get_base(self):
+		"""Returns a string representation of the document's base_uri."""
+		if self.base_uri is None:
+			return None
+		else:
+			return str(self.base_uri)
 
-		def get_space(self):
-			"""Returns the default space policy for the document.
+	def get_space(self):
+		"""Returns the default space policy for the document.
 
-			By default we return None, indicating that no policy is in force.
-			Derived documents can override this behaviour to return either "preserve"
-			or "default" to affect space handling.
-			"""
-			raise NotImplementedError
+		By default we return None, indicating that no policy is in force.
+		Derived documents can override this behaviour to return either "preserve"
+		or "default" to affect space handling.
+		"""
+		raise NotImplementedError
 
-		def validation_error(self, msg, element, data=None, aname=None):
-			"""Called when a validation error is triggered.
+	def validation_error(self, msg, element, data=None, aname=None):
+		"""Called when a validation error is triggered.
 
-			msg
-				contains a brief message suitable for describing the error
-				in a log file.
-			element
-				the element in which the validation error occurred
-				data, aname
+		msg
+			contains a brief message suitable for describing the error
+			in a log file.
+		element
+			the element in which the validation error occurred
+			data, aname
 
-			See :meth:`Element.validation_error`.
+		See :meth:`Element.validation_error`.
 
-			Prior to raising :class:`GIFTValidityError` this method logs a
-			suitable message at WARN level."""
-			if aname:
-				logging.warning("%s (in %s.%s) %s", msg, aname,
-					"" if data is None else repr(data))
-			else:
-				logging.warning("%s (in %s) %s", msg, element.giftname,
-					"" if data is None else repr(data))
-			raise GIFTValidityError("%s (in %s)" % (msg, element.giftname))
+		Prior to raising :class:`GIFTValidityError` this method logs a
+		suitable message at WARN level."""
+		if aname:
+			logging.warning("%s (in %s.%s) %s", msg, aname,
+				"" if data is None else repr(data))
+		else:
+			logging.warning("%s (in %s) %s", msg, element.giftname,
+				"" if data is None else repr(data))
+		raise GIFTValidityError("%s (in %s)" % (msg, element.giftname))
 
-		def register_element(self, element):
-			"""Registers an element's ID
+	def register_element(self, element):
+		"""Registers an element's ID
 
-			If the element has an ID attribute it is added to the internal
-			ID table.  If the ID already exists :class:`GIFTIDClashError` is
-			raised.
-			"""
-			if element.id in self.idTable:
-				raise GIFTIDClashError
-			else:
-				self.idTable[element.id] = element
+		If the element has an ID attribute it is added to the internal
+		ID table.  If the ID already exists :class:`GIFTIDClashError` is
+		raised.
+		"""
+		if element.id in self.idTable:
+			raise GIFTIDClashError
+		else:
+			self.idTable[element.id] = element
 
-		def unregister_element(self, element):
-			"""Removes an element's ID
+	def unregister_element(self, element):
+		"""Removes an element's ID
 
-			If the element has a uniquely defined ID it is removed from the
-			internal ID table.  Called prior to detaching the element from
-			the document.
-			"""
-			if element.id:
-				del self.idTable[element.id]
+		If the element has a uniquely defined ID it is removed from the
+		internal ID table.  Called prior to detaching the element from
+		the document.
+		"""
+		if element.id:
+			del self.idTable[element.id]
 
-		def get_element_by_id(self, id):
-			"""Returns the element with a given ID
+	def get_element_by_id(self, id):
+		"""Returns the element with a given ID
 
-			Returns None if the ID is not the ID of any element.
-			"""
-			return self.idTable.get(id, None)
+		Returns None if the ID is not the ID of any element.
+		"""
+		return self.idTable.get(id, None)
 
-		def get_unique_id(self, base_str=None):
-			"""Generates a random element ID that is not yet defined
+	def get_unique_id(self, base_str=None):
+		"""Generates a random element ID that is not yet defined
 
-			base_str
-				A suggested prefix (defaults to None)
-			"""
-			if not base_str:
-				base_str = '%X' % random.randint(0, 0xFFFF)
-			id_str = base_str
-			id_extra = 0
-			while id_str in self.idTable:
-				if not id_extra:
-					id_extra = random.randint(0, 0xFFFF)
-				id_str = '%s-%X' % (base_str, id_extra)
-				id_extra = id_extra + 1
-			return id_str
+		base_str
+			A suggested prefix (defaults to None)
+		"""
+		if not base_str:
+			base_str = '%X' % random.randint(0, 0xFFFF)
+		id_str = base_str
+		id_extra = 0
+		while id_str in self.idTable:
+			if not id_extra:
+				id_extra = random.randint(0, 0xFFFF)
+			id_str = '%s-%X' % (base_str, id_extra)
+			id_extra = id_extra + 1
+		return id_str
 
-		def read(self, src=None, **kws):
-			"""Reads this document, parsing it from a source stream.
+	def read(self, src=None, **kws):
+		"""Reads this document, parsing it from a source stream.
 
-			With no arguments the document is read from the
-			:py:attr:`base_uri` which must have been specified on
-			construction or with a call to the :py:meth:`set_base` method.
-			src (defaults to None)
+		With no arguments the document is read from the
+		:py:attr:`base_uri` which must have been specified on
+		construction or with a call to the :py:meth:`set_base` method.
 
+		src (defaults to None)
 			You can override the document's base URI by passing a value
 			for *src* which may be an instance of :py:class:`GIFTEntity`
 			or a file-like object suitable for passing to
 			:meth:`read_from_stream`.
-			"""
-			if src:
-				# Read from this stream, ignore base_uri
-				if isinstance(src, GIFTEntity):
-					self.read_from_entity(src)
-				else:
-					self.read_from_stream(src)
-			elif self.base_uri is None:
-				raise GIFTMissingLocationError
+		"""
+		if src:
+			# Read from this stream, ignore base_uri
+			if isinstance(src, GIFTEntity):
+				self.read_from_entity(src)
 			else:
-				with GIFTEntity() as e:
-					self.read_from_entity(e)
+				self.read_from_stream(src)
+		elif self.base_uri is None:
+			raise GIFTMissingLocationError
+		else:
+			with GIFTEntity(self.base_uri) as e:
+				self.read_from_entity(e)
 
-		def read_from_stream(self, src):
-			"""Reads this document from a stream
+	def read_from_stream(self, src):
+		"""Reads this document from a stream
 
-			src
-				Any object that can be passed to :class:`GIFTEntity`'s
-				constructor.
-			"""
-			self.data = []
-			e = GIFTEntity()
-			self.read_from_entity(e)
+		src
+			Any object that can be passed to :class:`GIFTEntity`'s
+			constructor.
+		"""
+		self.data = []
+		e = GIFTEntity()
+		self.read_from_entity(e)
 
-		def read_from_entity(self, e):
-			"""Reads this document from an entity
+	def read_from_entity(self, e):
+		"""Reads this document from an entity
 
-			e
-				A :class:`GIFTEntity` instance.
+		e
+			A :class:`GIFTEntity` instance.
 
-			The document is read from the current position in the entity.
-			"""
-			self.data = []
-			parser = self.GIFTParser(e)
-			parser.parse_document(self)
-			if e.location is not None:
-				# update our base_uri from the entity
-				self.set_base(e.location)
+		The document is read from the current position in the entity.
+		"""
+		self.data = []
+		parser = self.GIFTParser(e)
+		parser.parse_document(self)
+		if e.location is not None:
+			# update our base_uri from the entity
+			self.set_base(e.location)
 
-		def create(self, **kws):
-			"""Creates the Document.
+	def create(self, dst=None, **kws):
+		"""Creates the Document.
 
-			Only documents with file type baseURIs are supported.
-			"""
-			pass
+		Outputs the document as a GIFT stream.
 
-		def generate_gift(self):
-			"""A generator that yields serialised XML
+		dst (defaults to None)
+			The stream is written to the base_uri by default but
+			if the 'dst' argument is provided then it is written
+			directly to there instead.  dst can be any object
+			that supports the writing of binary strings.
 
-			Assume UTF-8 encoding.
+		Currently only documents with file type baseURIs are supported.
+		The file's parent directories are create if required.  The
+		file is always written using the UTF-8.
+		"""
+		if dst:
+			self.write_gift(dst)
+		elif self.base_uri is None:
+			raise GIFTMissingLocationError
+		elif isinstance(self.base_uri, uri.FileURL):
+			fpath = self.base_uri.get_pathname()
+			fdir, fname = os.path.split(fpath)
+			if not os.path.isdir(fdir):
+				os.makedirs(fdir)
+			f = open(fpath, 'wb')
+			try:
+				self.write_gift(f)
+			finally:
+				f.close()
+		else:
+			raise GIFTUnsupportedSchemeError(self.base_uri.scheme)
 
-			Assume escape_char_data is escape_function.
+	def generate_gift(self):
+		"""A generator that yields serialised XML
 
-			Yields character strings.
-			"""
-			if self.root:
-				for s in self.root.generate_gift(root=True):
-					yield s
+		Assume UTF-8 encoding.
 
-		def write_gift(self, writer):
-			"""Writes serialized GIFT to an output stream
+		Assume escape_char_data is escape_function.
 
-			writer
-				A file or file-like object operating in binary mode.
+		Yields character strings.
+		"""
+		if self.root:
+			for s in self.root.generate_gift(root=True):
+				yield s
 
-			The other arguments follow the same pattern as :meth:`generate_gift` which
-			this method uses to create the output which is always UTF-8 encoded.
-			"""
-			for s in self.generate_gift():
-				writer.write(s)
+	def write_gift(self, writer):
+		"""Writes serialized GIFT to an output stream
 
-		def update(self, **kws):
-			"""Updates the Document.
+		writer
+			A file or file-like object operating in binary mode.
 
-			Update outputs the document as a GIFT stream.
-			The stream is written to the base_uri which must already exist.
-			"""
-			if self.base_uri is None:
-				raise GIFTMissingLocationError
-			elif isinstance(self.base_uri, uri.FileURL):
-				fpath = self.base_uri.get_pathname()
-				if not os.path.isfile(fpath):
-					raise GIFTMissingResourceError(fpath)
-				f = open(fpath, 'wb')
-				try:
-					self.write_gift(f)
-				finally:
-					f.close()
-			else:
-				raise GIFTUnsupportedSchemeError(self.base_uri.scheme)
+		The other arguments follow the same pattern as :meth:`generate_gift` which
+		this method uses to create the output which is always UTF-8 encoded.
+		"""
+		for s in self.generate_gift():
+			writer.write(s)
 
-		def diff_string(self, other_doc, before=10, after=5):
-			"""Compares GIFT documents
+	def update(self, **kws):
+		"""Updates the Document.
 
-			other_doc
-				Another :class:`Document` instance to compare with.
+		Update outputs the document as a GIFT stream.
+		The stream is written to the base_uri which must already exist.
+		"""
+		if self.base_uri is None:
+			raise GIFTMissingLocationError
+		elif isinstance(self.base_uri, uri.FileURL):
+			fpath = self.base_uri.get_pathname()
+			if not os.path.isfile(fpath):
+				raise GIFTMissingResourceError(fpath)
+			f = open(fpath, 'wb')
+			try:
+				self.write_gift(f)
+			finally:
+				f.close()
+		else:
+			raise GIFTUnsupportedSchemeError(self.base_uri.scheme)
 
-			before (default 10)
-				Number of lines before the first difference to output
+	def diff_string(self, other_doc, before=10, after=5):
+		"""Compares GIFT documents
 
-			after (default 5)
-				Number of lines after the first difference to output
+		other_doc
+			Another :class:`Document` instance to compare with.
 
-			The two documents are converted to character strings and then
-			compared line by line until a difference is found.  The result
-			is suitable for logging or error reporting.  Used mainly to make the
-			output of unittests easier to understand.
-			"""
-			pass
+		before (default 10)
+			Number of lines before the first difference to output
+
+		after (default 5)
+			Number of lines after the first difference to output
+
+		The two documents are converted to character strings and then
+		compared line by line until a difference is found.  The result
+		is suitable for logging or error reporting.  Used mainly to make the
+		output of unittests easier to understand.
+		"""
+		pass
 
 
 class GIFTEntity():
 	"""Represents a GIFT entity.
-
-	Note: IGNORES URIs for now.
 
 	https://github.com/swl10/pyslet/blob/master/pyslet/xml/structures.py#L3188
 
@@ -1850,11 +2063,13 @@ class GIFTEntity():
 	characters to the main :py:class:`GIFTParser`.
 
 	src
-		May be a character string, or any object that supports
+		May be a character string, a binary string, an instance of
+		:py:class:`pyslet.rfc2396.URI`, or any object that supports
 		file-like behaviour (seek and read).
 
 		If provided, the corresponding open method is called immediately, see
-		:meth:`open_string` and :meth:`open_file`.
+		:meth:`open_unicode`, :meth:`open_string`, :meth:`open_uri` and
+		:meth:`open_file`.
 
 	encoding
 		If src is not None then this value will be passed when opening the entity
@@ -1870,10 +2085,20 @@ class GIFTEntity():
 	>>> uri.URI.from_octets('mygift.txt')
 	<pyslet.rfc2396.URI object at 0x10225cfd0>
 	"""
-	def __init__(self, src=None, **kws):
+	def __init__(self, src=None, encoding=None, **kws):
+		self.location = None
+		"""the location of this entity (used as the base URI to resolve
+		relative links).  A :class:`pyslet.rfc2396.URI` instance."""
+		self.encoding = None
 		self.data_source = None
 		self.char_source = None
 		self.close_source = False
+		self.bom = False
+		"""Flag to indicate whether or not the byte order mark was detected.
+		If detect the flag is set to True.  An initial byte order mark is
+		not reported in :py:attr:`the_char` or by the :py:meth:`next_char`
+		method.
+		"""
 		self.the_char = None
 		"""The character at the current position in the entity"""
 		self.line_num = None
@@ -1882,17 +2107,54 @@ class GIFTEntity():
 		"""The current character position within the entity (first char is 1)"""
 		self.buff_text = ''
 		self.base_pos = None
+		self.char_seek = None
+		self.chars = ''
+		self.char_pos = None
+		self.ignore_lf = None
+		self.flags = {}
 		if isinstance(src, str):
 			self.open_unicode(src)
+		elif isinstance(src, uri.URI):
+			self.open_uri(src)
 		elif isinstance(src, bytes):
 			self.open_string(src)
-		# elif src is not None:
-		# 	self.open_file(src)
+		elif src is not None:
+			self.open_file(src, encoding)
 
 	chunk_size = io.DEFAULT_BUFFER_SIZE
 	"""Characters are read from the data_source in chunks.
 	The default chunk size is set from io.DEFAULT_BUFFER_SIZE, typically 8KB.
 	"""
+
+	def get_name(self):
+		"""Returns a name to represent this entity
+
+		The name is intended for logs and error messages.  It defaults to the location
+		if set.
+		"""
+		if self.location is None:
+			return repr(self)
+		else:
+			return str(self.location)
+
+	def is_external(self):
+		"""Returns True if this is an external entity.
+
+		The default implementation returns True if *location* is not
+		None, False otherwise."""
+		return self.location is not None
+
+	def open(self):
+		"""Opens the entity for reading.
+
+		The default implementation uses :py:meth:`open_uri` to open the
+		entity from :py:attr:`location` if available, otherwise it raises
+		NotImplementedError.
+		"""
+		if self.location:
+			self.open_uri(self.location)
+		else:
+			raise NotImplementedError
 
 	def is_open(self):
 		"""Returns True if the entity is open for reading."""
@@ -1900,6 +2162,7 @@ class GIFTEntity():
 
 	def open_unicode(self, src):
 		"""Opens the entity from a unicode string."""
+		self.encoding = 'utf-8'
 		self.data_source = None
 		self.chunk = GIFTEntity.chunk_size
 		self.char_source = io.StringIO(src)
@@ -1925,20 +2188,50 @@ class GIFTEntity():
 		self.base_pos = self.char_source.tell()
 		self.reset()
 
-	# def open_file(self, src):
-	# 	"""Opens the entity from a file
+	def open_file(self, src, encoding='utf-8'):
+		"""Opens the entity from a file
 
-	# 	src
-	# 		An existing (open) binary file.
-	# 	"""
-	# 	self.data_source
-	# 	self.auto_detect_encoding(self.data_source)
-	# 	self.data_source = None
-	# 	self.char_source = src
-	# 	# self.char_source = codecs.getreader('utf-8')(self.data_source)
-	# 	self.chunk = 1
-	# 	self.base_pos = self.char_source.tell()
-	# 	self.reset()
+		Assumes utf-8 encoding.
+
+		src
+			An existing (open) binary file.
+		"""
+		self.encoding = 'utf-8'
+		self.char_source = src
+		self.data_source = None
+		self.chunk = 1
+		self.base_pos = self.char_source.tell()
+		self.reset()
+		"""
+		self.data_source = src
+		self.auto_detect_encoding(self.data_source)
+		if self.encoding is None:
+			self.encoding = 'utf-8'
+			self.char_source = self.data_source
+			self.data_source = None
+		else:
+			self.char_source = codecs.getreader(self.encoding)(self.data_source)
+		self.chunk = 1
+		self.base_pos = self.char_source.tell()
+		self.reset()
+		"""
+
+	def open_uri(self, src, **kws):
+		"""Opens the entity from a URI.
+
+		Assumes utf-8 encoding.
+
+		src
+			A :class:`pyslet.rfc2396.URI` instance of a file
+		"""
+		self.location = src
+		if isinstance(src, uri.FileURL):
+			self.data_source = open(src.get_pathname(), 'rb')
+			self.close_source = True
+			self.encoding = 'utf-8'
+			self.open_file(self.data_source, self.encoding)
+		else:
+			raise GIFTUnsupportedSchemeError
 
 	def reset(self):
 		"""Resets an open entity
@@ -1957,6 +2250,8 @@ class GIFTEntity():
 		self.char_pos = -1
 		self.ignore_lf = False
 		self.next_char()
+		if self.the_char == character(0xFEFF):
+			self.next_char()
 
 	def get_position_str(self):
 		"""A short string describing the current position.
@@ -1999,7 +2294,63 @@ class GIFTEntity():
 			else:
 				self.ignore_lf = False
 
-	# magic_table = {}
+	magic_table = {
+		# UCS-4, big-endian machine (1234 order)
+		b'\x00\x00\xfe\xff': ('utf_32_be', 4, True),
+		# UCS-4, little-endian machine (4321 order)
+		b'\xff\xfe\x00\x00': ('utf_32_le', 4, True),
+		# UCS-4, unusual octet order (2143)
+		b'\x00\x00\xff\xfe': ('utf_32', 4, True),
+		# UCS-4, unusual octet order (3412)
+		b'\xfe\xff\x00\x00': ('utf_32', 4, True),
+		# UTF-16, big-endian
+		b'\xfe\xff': ('utf_16_be', 2, True),
+		# UTF-16, little-endian
+		b'\xff\xfe': ('utf_16_le', 2, True),
+		# UTF-8 with byte order mark
+		b'\xef\xbb\xbf': ('utf-8', 3, True),
+		# UCS-4 or other encoding with a big-endian 32-bit code unit
+		b'\x00\x00\x00\x3c': ('utf_32_be', 0, False),
+		# UCS-4 or other encoding with a little-endian 32-bit code unit
+		b'\x3c\x00\x00\x00': ('utf_32_le', 0, False),
+		# UCS-4 or other encoding with an unusual 32-bit code unit
+		b'\x00\x00\x3c\x00': ('utf_32_le', 0, False),
+		# UCS-4 or other encoding with an unusual 32-bit code unit
+		b'\x00\x3c\x00\x00': ('utf_32_le', 0, False),
+		# UTF-16BE or big-endian ISO-10646-UCS-2 or other encoding with a
+		# 16-bit code unit
+		b'\x00\x3c\x00\x3f': ('utf_16_be', 0, False),
+		# UTF-16LE or little-endian ISO-10646-UCS-2 or other encoding with
+		# a 16-bit code unit
+		b'\x3c\x00\x3f\x00': ('utf_16_le', 0, False),
+		# UTF-8, ISO 646, ASCII or similar
+		b'\3c\x3f\x78\x6D': ('utf_8', 0, False),
+		# EBCDIC (in some flavor)
+		b'\4c\x6f\xa7\x94': ('cp500', 0, False)
+	}
+
+	def auto_detect_encoding(self, src_file):
+		"""Auto-detects the character encoding
+
+		src_file
+			A file object.  The object must support seek and blocking
+			read operations.  If src_file has been opened in text mode
+			then no action is taken."""
+		src_file.seek(0)
+		magic = src_file.read(4)
+		if isinstance(magic, str):
+			src_file.seek(0)
+			return
+		while len(magic) < 4:
+			magic = magic + b'Q'
+		if magic[:2] == b'\xff\xfe' or magic[:2] == b'\xfe\xff':
+			if magic[2:] != b'\x00\x00':
+				magic = magic[:2]
+		elif magic[:3] == b'\xef\xbb\xbf':
+			magic = magic[:3]
+		self.encoding, seek_pos, self.bom = self.magic_table.get(
+			magic, ('utf-8', 0, False))
+		src_file.seek(seek_pos)
 
 	def next_line(self):
 		"""Called when the entity reader detects a new line.
@@ -2031,3 +2382,100 @@ class GIFTEntity():
 
 	def __exit__(self, exc_type, exc_value, traceback):
 		self.close()
+
+
+class GIFTGeneralEntity(GIFTEntity):
+	"""Represents a general entity.
+
+	name
+		Optional name
+
+	definition
+		An optional definition
+
+	notation
+		An optional notation
+	"""
+	def __init__(self, name=None, definition=None, notation=None):
+		GIFTEntity.__init__(self, name, definition)
+		self.notation = notation
+
+	def get_name(self):
+		raise NotImplementedError
+
+
+class GIFTParameterEntity(GIFTEntity):
+	def __init__(self, name=None, definition=None):
+		raise NotImplementedError
+
+
+class GIFTExternalID(object):
+	"""Represents external references to entities.
+
+	public
+		An optional public identifier
+
+	system
+		An optional system identifier
+	"""
+	def __init__(self, public=None, system=None):
+		self.public = public  # : the public identifier, may be None
+		self.system = system  # : the system identifier, may be None
+
+	def get_location(self, base=None):
+		"""Get an absolute URI for the external entity.
+
+		Returns a :py:class:`pyslet.rfc2396.URI` resolved against
+		:py:attr:`base` if applicable.  If there is no system identifier
+		then None is returned."""
+		if self.system:
+			if base:
+				location = uri.URI.from_octets(self.system).resolve(base)
+			else:
+				location = uri.URI.from_octets(self.system)
+			if not location.is_absolute():
+				cwd = uri.URI.from_path(
+					os.path.join(os.getcwd(), os.curdir))
+				location = location.resolve(cwd)
+			if location.is_absolute():
+				return location
+		return None
+
+
+class GIFTNotation(object):
+	def __init__(self, name, external_id):
+		#: the notation name
+		self.name = name
+		#: the external ID of the notation (a GIFTExternalID instance)
+		self.external_id = external_id
+
+
+def map_class_elements(class_map, scope):
+	"""Adds element name -> class mappings to class_map
+
+	class_map
+		A dictionary that maps GIFT element names onto class objects that
+		should be used to represent them.
+
+	scope
+		A dictionary, or an object containing a __dict__ attribute, that
+		will be scanned for class objects to add to the mapping.  This
+		enables scope to be a module.  The search is not recursive, to
+		add class elements from imported modules you must call
+		map_class_elements for each module.
+
+	Mappings are added for each class that is derived from
+	:class:`Element` that has an GIFTNAME attribute defined.  It is an
+	error if a class is found with an GIFTNAME that has already been
+	mapped."""
+	if not isinstance(scope, dict):
+		scope = scope.__dict__
+	for name, obj in dict.items(scope):
+		if issubclass(type(obj), type) and issubclass(obj, Element):
+			if hasattr(obj, 'GIFTNAME'):
+				if obj.XMLNAME in class_map:
+					raise DuplicateGIFTNAME(
+						"%s and %s have matching GIFTNAMEs" %
+						(obj.__name__, class_map[
+							obj.GIFTNAME].__name__))
+				class_map[obj.GIFTNAME] = obj

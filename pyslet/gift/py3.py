@@ -18,7 +18,7 @@ def character(arg):
 
 join_characters = ''.join
 uempty = ''
-uspace = ''
+uspace = ' '
 
 
 def force_bytes(arg):

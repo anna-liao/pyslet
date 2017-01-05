@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 
-import structures as gift
+from pyslet.gift import structures as gift
+from ..pep8 import PEP8Compatibility
 
 
 class GIFTFatalError(gift.GIFTError):
@@ -13,7 +14,77 @@ class GIFTWellFormedError(GIFTFatalError):
 	pass
 
 
-class GIFTParser():
+class GIFTForbiddenEntityReference(GIFTFatalError):
+	"""Raised when a forbidden entity reference is encountered."""
+	pass
+
+
+def is_white_space(data):
+	"""Tests if every character in *data* matches S"""
+	for c in data:
+		if not gift.is_s(c):
+			return False
+	return True
+
+
+def contains_s(data):
+	"""Tests if data contains any S characters"""
+	for c in data:
+		if gift.is_s(c):
+			return True
+	return False
+
+
+def strip_leading_s(data):
+	"""Returns data with all leading S removed."""
+	s = 0
+	for c in data:
+		if gift.is_s(s):
+			s += 1
+		else:
+			break
+	if s:
+		return data[s:]
+	else:
+		return data
+
+
+def normalize_space(data):
+	"""Implements attribute value normalization
+
+	Returns data normalized according to the further processing rules
+	for attribute-value normalization:
+
+		"...by discarding any leading and trailing space characters, ..."
+	"""
+	pass
+
+
+class ContentParticleCursor(object):
+	"""Used to traverse an element's content model.
+
+	The cursor records its position within the content model by
+	recording the list of particles that may represent the current child
+	element. When the next start tag is found the particles' maps are
+	used to change the position of the cursor.  The end of the content
+	model is represented by a special entry that maps the empty string
+	to None.
+
+	"""
+	def __init__(self, element_type):
+		pass
+
+	def next(self, name=''):
+		"""Called when a child element with *name* is encountered.
+		"""
+		pass
+
+	def expected(self):
+		"""Sorted list of valid element names in the current state.
+		"""
+
+
+class GIFTParser(PEP8Compatibility):
 
 	"""A GIFTParser object
 
@@ -58,11 +129,73 @@ class GIFTParser():
 			the optional system ID of hte doctype, if None or omitted (the usual case)
 			the document class can match any system ID.
 		"""
-		cls._doc_class_table[(root_name, public_id, system_id)] = doc_class
+		pass
+
+	#: Default constant used for setting :py:attr:`refMode`
+	RefModeNone = 0
+
+	#: Treat references as per "in Content" rules
+	RefModeInContent = 1
+
+	#: Treat references as per "in Attribute Value" rules
+	RefModeInAttributeValue = 2
+
+	#: Treat references as per "as Attribute Value" rules
+	RefModeAsAttributeValue = 3
+
+	#: Treat references as per "in EntityValue" rules
+	RefModeInEntityValue = 4
 
 	def __init__(self, entity):
 		"""
 		https://github.com/swl10/pyslet/blob/master/pyslet/xml/parser.py#L622
+		"""
+		PEP8Compatibility.__init__(self)
+		self.check_validity = False
+		"""Checks GIFT validity constraints
+
+		If *check_validity* is True, and all other options are left at their
+		default (False) setting then the parser will behave as a validating
+		GIFT parser.
+		"""
+
+		#: Flag indicating if the document is valid, only set if
+		#: :py:attr:`check_validity` is True
+		self.valid = None
+		#: A list of non-fatal errors discovered during parsing, only
+		#: populated if :py:attr:`check_validity` is True
+		self.nonFatalErrors = []
+		#: checks GIFT compatibility constraints; will cause
+		#: :py:attr:`check_validity` to be set to True when parsing
+		self.checkCompatibility = False
+		#: checks all constraints; will cause :py:attr:`check_validity`
+		#: and :py:attr:`checkCompatibility` to be set to True when
+		#: parsing.
+		self.checkAllErrors = False
+		#: treats validity errors as fatal errors
+		self.raiseValidityErrors = False
+		#: provides a loose parser for GIFT-like documents
+		self.dont_check_wellformedness = False
+
+		self.refMode = GIFTParser.RefModeNone
+		"""The current parser mode for interpreting references.
+
+		GIFT documents can contain five different types of reference:
+		parameter entity, internal general entity, external parsed
+		entity, (external) unparsed entity and character entity.
+
+		The rulse for interpreting these references vary depending on
+		the current mode of the parser.  For example, in content a
+		reference to an internal entity is replaced, but in the
+		definition of an entity value it is not.  This means that the
+		behaviour of the :py:meth:`parse_reference` method will differ
+		depending on the mode.
+
+		The parser takes care of setting the mode automatically but if
+		you wish to use some of the parsing methods in isolation to parse
+		fragments of GIFT documents, then you will need to set the
+		*refMode* directly using one of the RefMode* family of
+		constants defined above.
 		"""
 		#: The current entity being parsed
 		self.entity = entity
@@ -73,6 +206,54 @@ class GIFTParser():
 		else:
 			self.the_char = None
 		self.buff = []
+		#: The document being parsed
+		self.doc = None
+		#: The document entity
+		self.docEntity = entity
+		#: The current element being parsed
+		self.element = None
+		#: The element type of the current element
+		self.elementType = None
+		self.idTable = {}
+		self.idRefTable = {}
+		self.cursor = None
+		self.dataCount = 0
+		self.noPERefs = False
+		self.gotPERef = False
+
+	def get_context(self):
+		"""Returns the parser's context
+
+		This is either the current element or the document if no
+		element is being parsed.
+		"""
+		if self.element is None:
+			return self.doc
+		else:
+			return self.element
+
+	def next_char(self):
+		"""Moves to the next character in the stream.
+
+		The current character can always be read from
+		:py:attr:`the_char`.  If there are no characters
+		left in the current entity then entities are
+		popped from an internal entity stack automatically.
+		"""
+		if self.buff:
+			self.buff = self.buff[1:]
+		if self.buff:
+			self.the_char = self.buff[0]
+		else:
+			self.entity.next_char()
+			self.the_char = self.entity.the_char
+			while self.the_char is None and self.entityStack:
+				self.entity.close()
+				self.entity = self.entityStack.pop()
+				self.the_char = self.entity.the_char
+
+	def buff_text(self, unused_chars):
+		pass
 
 	def parse_document(self, doc=None):
 		""" [1] document: parses a Document.

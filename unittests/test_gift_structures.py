@@ -4,8 +4,10 @@
 import unittest
 import os.path
 import shutil
+import logging
 
 from tempfile import mkdtemp
+from pyslet import rfc2396 as uri
 from pyslet.gift import structures
 
 
@@ -38,6 +40,7 @@ TEST_DATA_DIR = os.path.join(
 # 		if flag:
 # 			edges.append(max + 1)
 # 		return edges
+
 
 class NamedElement(structures.Element):
 	GIFTNAME = "test"
@@ -375,25 +378,130 @@ class DocumentTests(unittest.TestCase):
 		d = structures.Document()
 		self.assertTrue(d.root is None, 'root on construction')
 		self.assertTrue(d.get_base() is None, 'base set on construction')
-	# 	d = structures.Document(root=structures.Element)
-	# 	self.assertTrue(isinstance(d.root, structures.Element),
-	# 		'root not created on construction')
-	# 	self.assertTrue(d.root.get_document() is d,
-	# 		'root not linked to document')
+		d = structures.Document(root=structures.Element)
+		self.assertTrue(isinstance(d.root, structures.Element),
+			'root not created on construction')
+		self.assertTrue(d.root.get_document() is d,
+			'root not linked to document')
 
-	# def test_base(self):
-	# 	"""Test the use of a file path on construction"""
-	# 	fpath = os.path.abspath('fpath.txt')
-	# 	d = structures.Document()
-	# 	self.assertTrue(d.root is None, 'root on construction')
-	# 	d = structures.Document(root=structures.Element)
-	# 	self.assertTrue(isinstance(d.root, structures.Element),
-	# 		'root not created on construction')
+	def test_base(self):
+		"""Test the use of a file path on construction"""
+		fpath = os.path.abspath('fpath.txt')
+		furl = str(uri.URI.from_path(fpath))
+		d = structures.Document(base_uri=furl)
+		self.assertTrue(d.get_base() == furl, "Base not set in constructor")
+		self.assertTrue(d.root is None, 'root on construction')
+		d = structures.Document(base_uri='fpath.txt', root=structures.Element)
+		self.assertTrue(d.get_base() == furl,
+			"Base not made absolute from relative URL:\n\t%s\n\t%s" %
+			(furl, d.get_base()))
+		self.assertTrue(isinstance(d.root, structures.Element),
+			'root not created on construction')
+		d = structures.Document()
+		d.set_base(furl)
+		self.assertTrue(d.get_base() == furl, "Base not set by set_base")
 
 	# def test_read_file(self):
 	# 	"""Test the reading of the Document from the file system"""
 	# 	os.chdir(TEST_DATA_DIR)
-	# 	d = structures.Document()
+	# 	d = structures.Document(base_uri='readFile.txt')
 	# 	d.read()
 	# 	root = d.root
 	# 	self.assertTrue(isinstance(root, structures.Element))
+	# 	self.assertTrue(root.giftname == 'tag' and root.get_value() == 'Hello World')
+	#
+	# Cannot find where root is set to an Element in the source code, when
+	# Document object instantiated with no root specified or d.read()
+	# Need to implement parser still.
+
+	# def test_read_string(self):
+	# 	"""Test the reading of the Document from a supplied stream"""
+	# 	os.chdir(TEST_DATA_DIR)
+	# 	d = structures.Document(base_uri='readFile.txt')
+	# 	f = open('readFile.txt', 'rb')
+	# 	d.read(src=f)
+	# 	f.close()
+	# 	root = d.root
+	# 	self.assertTrue(isinstance(root, structures.Element))
+	# 	self.assertTrue(root.giftname == 'tag' and root.get_value() == 'Hello World')
+
+	# def test_string(self):
+	# 	os.chdir(TEST_DATA_DIR)
+	# 	d = structures.Document(base_uri='readFile.txt')
+	# 	d.read()
+	# 	f = open('readFile.txt', 'rb')
+	# 	flines = f.read().splitlines()
+	# 	f.close()
+	# 	# bytes always formats using unix-style newlines
+	# 	dlines = bytes(d).split(b'\n')
+	# 	self.assertTrue(dlines == flines, "GIFT output: %s" % bytes(d))
+	# 	# requires implementing __bytes__ method which relies on generate_gift()
+
+	def test_resolve_base(self):
+		"""Test the use of a resolve_uri and resolve_base"""
+		os.chdir(TEST_DATA_DIR)
+		parent = structures.Element(None)
+		self.assertTrue(parent.resolve_base() is None, "No default base")
+		child = structures.Element(parent)
+		self.assertTrue(child.resolve_base() is None, "No gift:base by default")
+		parent.set_base('file:///index.txt')
+		self.assertTrue(child.resolve_base() == 'file:///index.txt',
+			"No gift:base inheritance")
+		# Tests with a document follow
+		furl = str(uri.URI.from_path(os.path.abspath('base.txt')))
+		href = uri.URI.from_path(os.path.abspath('link.txt'))
+		href_path = href.abs_path
+		href = str(href)
+		alt_ref = 'file:///hello/link.txt'
+		d = structures.Document(base_uri='base.txt')
+		self.assertTrue(d.get_base() == furl,
+			"Base not resolved relative to w.d. by constructor")
+		# TODO: implement parsing for unittests/data_gift/base.txt
+		# d.read()
+		# tag = d.root
+		# self.assertTrue(
+		# 	tag.resolve_base() == furl, "Root element resolves from document")
+
+	# def test_create(self):
+	# 	"""Test the creating of the Document on the file system."""
+	# 	create_1_gift = ""
+	# 	d = structures.Document(root=NamedElement)
+	# 	d.set_base('create1.txt')
+	# 	d.create()
+	#   # create() depends on write_gift() method
+	# 	try:
+	# 		f = open("create1.txt")
+	# 		data = f.read()
+	# 		f.close()
+	# 		self.assertTrue(data == create_1_gift, "create Test")
+	# 	except IOError:
+	# 		self.fail("create Test failed to create file")
+
+	def test_update(self):
+		pass
+
+	def test_id(self):
+		"""Tests the built-in handling of a Document's ID space."""
+		doc = structures.Document()
+		e1 = structures.Element(doc)
+		e2 = structures.Element(doc)
+		e1.id = e2.id = 'test'
+		doc.register_element(e1)
+		try:
+			doc.register_element(e2)
+			self.fail("Failed to spot ID clash")
+		except structures.GIFTIDClashError:
+			pass
+		e2.id = 'test2'
+		doc.register_element(e2)
+		self.assertTrue(doc.get_element_by_id('test') is e1,
+			"Element look-up failed")
+		new_id = doc.get_unique_id('test')
+		self.assertFalse(new_id == 'test' or new_id == 'test2')
+
+	def test_reflection(self):
+		pass
+
+if __name__ == "__main__":
+	logging.basicConfig(level=logging.INFO)
+	unittest.main()
