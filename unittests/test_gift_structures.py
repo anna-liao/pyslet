@@ -2,6 +2,10 @@
 # import sys
 # sys.path.append('..')
 import unittest
+import os.path
+import shutil
+
+from tempfile import mkdtemp
 from pyslet.gift import structures
 
 
@@ -9,8 +13,8 @@ def suite():
 	return unittest.TestSuite((
 		# unittest.makeSuite(GIFTCharacterTests, 'test'),
 		unittest.makeSuite(GIFTEntityTests, 'test'),
-		unittest.makeSuite(ElementTests, 'test')
-		# unittest.makeSuite(DocumentTests, 'test')
+		unittest.makeSuite(ElementTests, 'test'),
+		unittest.makeSuite(DocumentTests, 'test')
 	))
 
 
@@ -356,4 +360,14 @@ class ElementTests(unittest.TestCase):
 
 
 class DocumentTests(unittest.TestCase):
-	pass
+	def setUp(self):
+		self.cwd = os.getcwd()
+		self.d = mkdtemp('.d', 'pyslet-test_gift-')
+		os.chdir(self.d)
+
+	def tearDown(self):
+		os.chdir(self.cwd)
+		shutil.rmtree(self.d, True)
+
+	def test_constructor(self):
+		pass
