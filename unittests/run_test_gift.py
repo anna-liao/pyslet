@@ -4,12 +4,14 @@
 import unittest
 import logging
 
-import test_gift_structures
+# import test_gift_structures
 # import test_gift_namespace
+import test_gift_parser
 
 all_tests = unittest.TestSuite()
-all_tests.addTest(test_gift_structures.suite())
+# all_tests.addTest(test_gift_structures.suite())
 # all_tests.addTest(test_gift_namespace.suite())
+all_tests.addTest(test_gift_parser.suite())
 
 
 def suite():

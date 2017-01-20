@@ -10,7 +10,7 @@ import pyslet.gift.giftns as giftns
 def suite():
 	return unittest.TestSuite((
 		unittest.makeSuite(GIFTNSElementTests, 'test')
-		))
+	))
 
 # Basic comment
 EXAMPLE_1 = b"""//Hello World"""
@@ -31,4 +31,30 @@ class GIFTNSElementTests(unittest.TestCase):
 		e = giftns.NSElement(None)
 		self.assertTrue(e.ns is None, 'ns set on construction')
 		self.assertTrue(e.giftname is None,
-			               'element name not set on construction')
+			'element name not set on construction')
+
+
+class GIFTExampleElement(giftns.NSElement):
+	GIFTCONTENT = ElementType.ElementContent
+
+
+class GIFTExampleDocument(giftns.NSDocument):
+	default_ns = "http://www.example.com"
+
+	@classmethod
+	def get_element_class(cls, name):
+		if name[1] in ("createTag"):
+			return GIFTExampleElement
+		else:
+			return giftns.NSDocument.get_element_class(name)
+
+
+class GIFTNSDocumentTests(unittest.TestCase):
+
+	def test_read_string(self):
+		"""Test the reading of the NSDocument from a supplied stream"""
+		d = giftns.NSDocument()
+		d.read(src=io.BytesIO(EXAMPLE_1))
+		root = d.root
+		self.assertTrue(isinstance(root, giftns.NSElement))
+		self.assertTrue(root.ns is None and root.giftname == '' and root.get_value() == 'Hello World')

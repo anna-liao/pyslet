@@ -177,6 +177,10 @@ class GIFTParser(PEP8Compatibility):
 		#: provides a loose parser for GIFT-like documents
 		self.dont_check_wellformedness = False
 
+		# Ignore unicode and sgml.  sgml refers to case insensitive.
+		# See https://github.com/swl10/pyslet/blob/master/pyslet/xml/parser.py#L651
+		# for SGML's NAMECASE GENERAL for XML parser
+
 		self.refMode = GIFTParser.RefModeNone
 		"""The current parser mode for interpreting references.
 
@@ -254,6 +258,223 @@ class GIFTParser(PEP8Compatibility):
 
 	def buff_text(self, unused_chars):
 		pass
+
+	def _get_buff(self):
+		if len(self.buff) > 1:
+			return ''.join(self.buff[1:])
+		else:
+			return ''
+
+	def push_entity(self, entity):
+		"""Starts parsing an entity
+
+		entity
+			A :py:class:'~pyslet.gift.structures.GIFTEntity'
+			instance which is to be parsed.
+
+		:py:attr:`the_char` is set to the current character in the
+		entity's stream.  The current entity is pushed onto an internal
+		stack and will be resumed when this entity has been parsed
+		completely.
+
+		Note that in the degenerate case where the entity being pushed
+		is empty (or is already positioned at the end of the file) then
+		push_entity does nothing.
+		"""
+		if entity.the_char is not None:
+			self.entityStack.append(self.entity)
+			self.entity = entity
+			self.entity.flags = {}
+			self.the_char = self.entity.the_char
+			# assume UTF-8 and ignore check for UTF-16
+		if entity.buff_text:
+			self.buff_text(entity.buff_text)
+
+	def get_external_entity(self):
+		"""Returns the external entity currently being parsed.
+
+		If no external entity is being parsed then None is returned."""
+		if self.entity.is_external():
+			return self.entity
+		else:
+			i = len(self.entityStack)
+			while i:
+				i = i - 1
+				e = self.entityStack[i]
+				if e.is_external():
+					return e
+		return None
+
+	def standalone(self):
+		"""True if the document should be treated as standalone.
+
+		A document may be declared standalone or it may effectively be
+		standalone due to the absence of a DTD, or the absence of an
+		external DTD subset and parameter entity references.
+		"""
+		if self.declared_standalone():
+			return True
+		if self.dtd is None or self.dtd.external_id is None:
+			# no dtd or just an internal subset
+			return not self.gotPERef
+
+	def declared_standalone(self):
+		"""True if the current document was declared standalone."""
+		return self.declaration and self.declaration.standalone
+
+	def well_formedness_error(self, msg="well-formedness error", error_class=GIFTWellFormedError):
+		"""Raises a GIFTWellFormedError error.
+
+		msg
+			An optional message string
+
+		error_class
+			An optional error class which must be a class object derived from
+			:py:class:`GIFTWellFormednessError`.
+
+		Called by the parsing methods whenever a well-formedness constraint is violated.
+
+		The method raises an instance of *error_class* and does not return.  This method
+		can be overridden by derived parsers to implement more sophisticated error logging.
+		"""
+		raise error_class("%s: %s" % (self.entity.get_position_str(), msg))
+
+	def validity_error(self, msg="validity error", error=gift.GIFTValidityError):
+		"""Called when the parser encounters a validity error.
+
+		msg
+			An optional message string
+
+		error
+			An optional error class or instance which must be a (class)
+			object derived from :py:class:`GIFTValidityError`.
+
+		The behaviour varies depending on the setting of the :py:attr:`check_validity` and
+		:py:attr:`raiseValidityErrors` options.  The default (both False) causes validity
+		errors to be ignored.  When checking validity an error message is logged to
+		:py:attr:`nonFatalErrors` and :py:attr:`valid` isset to False.  Furthermore, if
+		:py:attr:`raiseValidityErrors` is True *error* is raised (or a new instance of *error*
+		is raised) and parsing terminates
+
+		This method can be overridden by derived parsers to implement more sophisticated
+		error logging.
+		"""
+		if self.check_validity:
+			self.valid = False
+			if isinstance(error, gift.GIFTValidityError):
+				self.nonFatalErrors.append(
+					"%s: %s (%s)" %
+					(self.entity.get_position_str(), msg, str(error)))
+				if self.raiseValidityErrors:
+					raise error
+			elif issubclass(error, gift.GIFTValidityError):
+				msg = "%s: %s" % (self.entity.get_position_str(), msg)
+				self.nonFatalErrors.append(msg)
+				if self.raiseValidityErrors:
+					raise error(msg)
+			else:
+				raise TypeError(
+					"validity_error expected class or instance of "
+					"GIFTValidityError (found %s)" % repr(error))
+
+	def compatibility_error(self, msg="compatibility error"):
+		"""Called when the parser encounters a compatibility error.
+
+		msg
+			An optional message string
+
+		The behaviour varies depending on the setting of the :py:attr:`checkCompatibility`
+		flag.  The default (False) causes compatibility errors to be ignored.  When checking
+		compatibility an error message is logged to :py:attr:`nonFatalErrors`.
+
+		This method can be overridden by derived parsers to implement more sophisticated error
+		logging.
+		"""
+		if self.checkCompatibility:
+			self.nonFatalErrors.append(
+				"%s: %s" % (self.entity.get_position_str(), msg))
+
+	def processing_error(self, msg="Processing error"):
+		"""Called when the parser encounters a general processing error.
+
+		msg
+			An optional message string
+
+		The behaviour varies depending on the setting of the :py:attr:`checkAllErrors`
+		flag.  The default (False) causes processing errors to be ignored.  When checking
+		all errors an error message is logged to :py:attr:`nonFatalErrors`.
+
+		This method can be overridden by derived parsers to implement more sophisticated error
+		logging.
+		"""
+		if self.checkAllErrors:
+			self.nonFatalErrors.append("%s: %s" % (self.entity.get_position_str(), msg))
+
+	def parse_literal(self, match):
+		"""Parses an optional literal string.
+
+		match
+			The literal string to match
+
+		Returns True if *match* is successfully parsed and False otherwise.  There is no
+		partial matching, if *match* is not found then the parser is left in its original
+		position.
+		"""
+		match_len = 0
+		for m in match:
+			if m != self.the_char and (self.the_char is None or m.lower() != self.the_char.lower()):
+				self.buff_text(match[:match_len])
+				break
+			match_len += 1
+			self.next_char()
+		return match_len == len(match)
+
+	def parse_required_literal(self, match, production="Literal String"):
+		"""Parses a required literal string.
+
+		match
+			The literal string to match
+
+		production
+			An optional string describing the context in which the literal was expected.
+
+		There is no return value.  If the literal is not matched a wellformed error
+		is generated.
+		"""
+		if not self.parse_literal(match):
+			self.well_formedness_error("%s: Expected %s" % (production, match))
+
+	def parse_decimal_digits(self):
+		"""Parses a, possibly empty, string of decimal digits.
+
+		Decimal digits match [0-9].  Returns the parsed digits as a string or
+		an *empty string* if no digits were matched.
+		"""
+		data = []
+		while self.the_char is not None and self.the_char in "0123456789":
+			data.append(self.the_char)
+			self.next_char()
+		return ''.join(data)
+
+	def parse_required_decimal_digits(self, production="Digits"):
+		"""Parses a required string of decimal digits.
+
+		production
+			An optional string describing the context in which the
+			decimal digits were expected.
+
+		Decimal digits match [0-9].  Returns the parsed digits as a string.
+		"""
+		digits = self.parse_decimal_digits()
+		if not digits:
+			self.well_formedness_error(production + ": Expected [0-9]+")
+		return digits
+
+	def parse_hex_digits(self):
+		raise NotImplementedError
+
+	def parse_required_hex_digits(self, production="Hex Digits"):
+		raise NotImplementedError
 
 	def parse_document(self, doc=None):
 		""" [1] document: parses a Document.

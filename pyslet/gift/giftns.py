@@ -1,4 +1,3 @@
-
 #! /usr/bin/env python
 
 """
@@ -27,12 +26,6 @@ from .structures import (
 from .parser import (
 	GIFTFatalError,
 	GIFTParser)
-
-from . import (
-	content,
-	processing,
-	interactions,
-	variables)
 
 #: Special string constant used to represent no namespace
 NO_NAMESPACE = "~"
