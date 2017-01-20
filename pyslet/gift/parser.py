@@ -1,4 +1,5 @@
 #! /usr/bin/env python
+import logging
 
 from pyslet.gift import structures as gift
 from ..pep8 import PEP8Compatibility
@@ -493,13 +494,32 @@ class GIFTParser(PEP8Compatibility):
 		This method returns the document that was parsed, an instance of
 		:py:class:`~pyslet.gift.structures.Document`.
 		"""
-		pass
+		self.refMode == GIFTParser.RefModeInContent
+		self.doc = doc
+		if self.checkAllErrors:
+			self.checkCompatibility = True
+		if self.checkCompatibility:
+			self.check_validity = True
+		if self.check_validity:
+			self.valid = True
+		else:
+			self.valid = None
+		self.nonFatalErrors = []
+		# self.parse_prolog()
+		if self.doc is None:
+			raise gift.GIFTFatalError("parse_document(): self.doc is None")
+		self.parse_element()
+		self.parse_misc()
+		if self.the_char is not None and not self.dont_check_wellformedness:
+			self.well_formedness_error("Unparsed characters in entity after document: %s" %
+				repr(self.the_char))
+		return self.doc
 
 	def get_document_class(self, dtd):
 		"""
 		https://github.com/swl10/pyslet/blob/master/pyslet/xml/parser.py#L1176
 		"""
-		pass
+		raise NotImplementedError
 
 	def is_s(self):
 		"""Tests if the current character matches S
@@ -575,105 +595,233 @@ class GIFTParser(PEP8Compatibility):
 			self.next_char()
 		return match_len == len(match)
 
-	def well_formedness_error(self, msg="well-formedness error", error_class=GIFTWellFormedError):
-		"""Raises a GIFTWellFormedError error.
+	def parse_entity_value(self):
+		raise NotImplementedError
 
-		https://github.com/swl10/pyslet/blob/master/pyslet/xml/parser.py#L924
-
-		msg
-			An optional message string
-
-		error_class
-			an optional error class which must be a class object derived
-			from py:class:`GIFTWellFormedError`.
-
-		Called by the parsing methods whenever a well-formedness constraint is violated.
-
-		The method raises an instance of *error_class* and does not return.  This method
-		can be overridden by derived parsers to implement more sophisticated error logging.
-		"""
-		raise error_class("%s: %s" % (self.entity.get_position_str(), msg))
-
-	def next_char(self):
-		"""Moves to the next character in the stream.
-
-		https://github.com/swl10/pyslet/blob/master/pyslet/xml/parser.py#L764
-
-		The current character can always be read from :py:attr:`the_char`. If
-		there are no characters left in the current entity then entities are
-		popped from an internal entity stack automatically.
-		"""
-		if self.buff:
-			self.buff = self.buff[1:]
-		if self.buff:
-			self.the_char = self.buff[0]
-		else:
-			self.entity.next_char()
-			self.the_char = self.entity.the_char
-			while self.the_char is None and self.entityStack:
-				self.entity.close()
-				self.entity = self.entityStack.pop()
-				self.the_char = self.entity.the_char
-
-	def buff_text(self, unused_chars):
-		"""Buffers characters that have already been parsed.
-
-		https://github.com/swl10/pyslet/blob/master/pyslet/xml/parser.py#L783
-
-		unused_chars
-			A string of characters to be pushed back to the parser in the order
-			in which they are to be parsed.
-
-		This method enables characters to be pushed back into the parser forcing
-		them to be parsed next.  The current character is saved and will be parsed
-		(again) once the buffer is exhausted.
-		"""
-		if unused_chars:
-			if self.buff:
-				self.buff = list(unused_chars) + self.buff
-			else:
-				self.buff = list(unused_chars)
-				if self.entity.the_char is not None:
-					self.buff.append(self.entity.the_char)
-				self.the_char = self.buff[0]
+	def parse_system_literal(self):
+		raise NotImplementedError
 
 	def parse_comment(self, got_literal=False):
-		""" [15] Comment
-
-		https://github.com/swl10/pyslet/blob/master/pyslet/xml/parser.py#L1597
+		"""[15] Comment
 
 		got_literal
-			If True then the method assumes that the '//' literal has already
-			been parsed.
-
-		qti comment is '<!--'
-
-		GIFT line comment: https://docs.moodle.org/23/en/GIFT_format#Line_Comments
+			If True then the method assumes that the '//' literal has
+			already been parsed.
 
 		Returns the comment as a string.
 		"""
-
 		production = "[15] Comment"
 		data = []
+		# nhyphens = 0
 		if not got_literal:
 			self.parse_required_literal('//', production)
+		# centity = self.entity
 		while self.the_char is not None:
-			"""Iterates through each character.
-
-			Example of GIFT format:
-			// question: 914  name: What's 2 plus 2?
-			::What's 2 plus 2?::What's 2 plus 2?{#
-				=4:0#
-			}
-
-			Comments start with "//" and ends at the end of the line
-			"""
-			if self.the_char == 'EOL':
-				#: Need to figure out how end of line character is defined
-				pass
+			if self.the_char == '\n':
+				# end of comment
+				self.next_char()
+				break
 			else:
 				data.append(self.the_char)
 				self.next_char()
 		return ''.join(data)
 
+	def parse_prolog(self):
+		# only relevant for XML documents
+		raise NotImplementedError
 
+	def parse_decl(self, got_literal=False):
+		# only relevant for XML documents
+		raise NotImplementedError
+
+	def parse_misc(self):
+		"""[27] Misc
+
+		This method parses everything that matches the production Misc*
+		"""
+		while True:
+			if self.is_s():
+				self.next_char()
+				continue
+			elif self.parse_literal('//'):
+				self.parse_comment(True)
+				continue
+			else:
+				break
+
+	def parse_int_subset(self):
+		"""[28b] intSubset
+
+		Parses an internal subset."""
+		raise NotImplementedError
+
+	def parse_markup_decl(self, got_literal=False):
+		""" for xml, tag is '<'
+		"""
+		raise NotImplementedError
+
+	def parse_ext_subset(self):
+		""" external subset.  for xml, denoted with '<?xml'
+		"""
+		raise NotImplementedError
+
+	def check_pe_between_declarations(self, check_entity):
+		""" check well-formedness constraint on use of PEs between declarations.
+		"""
+		raise NotImplementedError
+
+	def parse_element(self):
+		"""[39] element
+
+		The class used to represent the element is determined by calling the
+		:py:meth:`~pyslet.gift.structures.Document.get_element_class`
+		method of the current document.  If there is no document yet then a
+		new document is created automatically (see :py:meth:`parse_document` for
+		more information).
+
+		The element is added as a child of the current element using
+		:py:meth:`Node.add_child`.
+
+		The method returns a boolean value:
+
+		True
+			the element was parsed normally
+
+		False
+			the element is not allowed in this context
+
+		The second case only occurs when the :py:attrs:`sgml_omittag` option is
+		in use and it indicates that the content of the enclosing element has ended.
+		The Tag is buffered so that it can be reparsed when the stack of nested
+		:py:meth:`parse_element` calls is unwound to the point where it is allowed
+		by the context.
+		"""
+		production = "[39] element"
+		save_element = self.element
+		save_element_type = self.elementType
+		save_cursor = None
+
+		context = self.get_context()
+		empty = False
+		# get_context() returns either element or doc
+		# Document.add_child(self, child_class, name=None)
+		self.element = context.add_child(gift.Element, None)
+		if getattr(gift.Element, 'GIFTCONTENT', gift.GIFTMixedContent) == gift.GIFTEmpty:
+			empty = True
+		if not empty:
+			save_data_count = self.dataCount
+			self.parse_content()
+		if self.dataCount == save_data_count:
+			raise gift.GIFTFatalError(production + ": element had empty content %s" % self.element)
+		self.element.content_changed()
+		self.element = save_element
+		self.elementType = save_element_type
+		self.cursor = save_cursor
+		return True
+
+	def check_attributes(self, name, attrs):
+		""" Checks *attrs* against the declarations for an element.
+		"""
+		raise NotImplementedError
+
+	def match_gift_name(self, element, name):
+		""" tests if *name* is a possible name for *element*
+
+		Checks if end tag is end tag of this element
+		"""
+		return element.get_giftname() == name
+
+	def check_expected_particle(self, name):
+		""" checks validity of element name in current context
+		"""
+		raise NotImplementedError
+
+	def get_stag_class(self, name, attrs=None):
+		raise NotImplementedError
+
+	def parse_stag(self):
+		""" [40] STag, [44] EmptyElemTag
+
+		This method returns a tuple of (name, attrs, emptyFlag) where:
+
+		name
+			the name of the element parsed
+
+		attrs
+			a dictionary of attribute values keyed by attribute name
+
+		emptyFlag
+			a boolean; True indicates that the tag was an empty element tag.
+
+		GIFT doesn't have element names nor attributes
+		"""
+		raise NotImplementedError
+
+	def parse_attribute(self):
+		raise NotImplementedError
+
+	def parse_content(self):
+		"""[43] content
+
+		The method returns:
+
+		True
+			indicates that the content was parsed normally
+
+		False
+			indicates that the content contained data or markup not
+			allowed in this context
+		"""
+		while True:
+			if self.the_char == '/':
+				# First character of comment tag
+				self.next_char()
+				if self.the_char == '/':
+					# Second character of comment tag
+					self.parse_comment(True)
+				else:
+					self.well_formedness_error("Expected Comment")
+			elif self.the_char is '/n' or self.the_char is None:
+				# end of entity
+				return True
+		return True
+
+	def handle_data(self, data):
+		"""[43] content
+
+		data
+			A string of data to be handled
+
+		Data is handled by calling :py:meth:`~pyslet.gift.structures.Element.add_data`
+		even if the data is optional white space.
+		"""
+		if data and self.element:
+			self.element.add_data(data)
+			self.dataCount += len(data)
+
+	def unhandled_data(self, data):
+		""" Only called when sgml_omittag option is in use.
+		"""
+		raise NotImplementedError
+
+	def parse_empty_elem_tag(self):
+		raise NotImplementedError
+
+	def parse_content_spec(self, etype):
+		raise NotImplementedError
+
+	def parse_children(self):
+		raise NotImplementedError
+
+	def parse_cp(self):
+		"""GIFTContentParticle"""
+		raise NotImplementedError
+
+	def parse_choice(self):
+		raise NotImplementedError
+
+	def parse_seq(self):
+		raise NotImplementedError
+
+	def parse_mixed(self):
+		raise NotImplementedError
