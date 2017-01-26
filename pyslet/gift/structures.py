@@ -10,6 +10,7 @@ import warnings
 
 from copy import copy
 from .py3 import (
+    PY2,
 	join_characters,
 	uspace,
 	uempty,
@@ -289,7 +290,7 @@ class ElementType(object):
 _gift_base = 'gift:base'
 
 
-class Node():
+class Node(object):
 	"""Base class for Element and Document shared attributes.
 
 	https://github.com/swl10/pyslet/blob/master/pyslet/xml/structures.py#L377
@@ -517,7 +518,7 @@ class Element(Node):
 	GIFTCONTENT = ElementType.MIXED
 
 	def __init__(self, parent, name=None):
-		super().__init__(parent)
+		super(Element, self).__init__(parent)
 		if name is None:
 			if hasattr(self.__class__, 'GIFTNAME'):
 				self.set_giftname(self.GIFTNAME)
@@ -1706,7 +1707,7 @@ class Document(Node):
 
 	def __init__(self, root=None, base_uri=None, **kws):
 		base_uri = kws.get('baseURI', base_uri)
-		super().__init__()
+		super(Document, self).__init__()
 		self.base_uri = None
 		self.root = None
 		"""The root element or None if no root element has been created yet.
@@ -2165,6 +2166,8 @@ class GIFTEntity():
 		self.encoding = 'utf-8'
 		self.data_source = None
 		self.chunk = GIFTEntity.chunk_size
+		if PY2:
+			src = unicode(src)
 		self.char_source = io.StringIO(src)
 		self.close_source = True
 		self.base_pos = self.char_source.tell()
