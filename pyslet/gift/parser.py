@@ -85,7 +85,8 @@ class ContentParticleCursor(object):
 		"""
 
 
-class GIFTParser(PEP8Compatibility):
+# class GIFTParser(PEP8Compatibility):
+class GIFTParser:
 
 	"""A GIFTParser object
 
@@ -151,7 +152,7 @@ class GIFTParser(PEP8Compatibility):
 		"""
 		https://github.com/swl10/pyslet/blob/master/pyslet/xml/parser.py#L622
 		"""
-		PEP8Compatibility.__init__(self)
+		# PEP8Compatibility.__init__(self)
 		self.check_validity = False
 		"""Checks GIFT validity constraints
 
@@ -256,6 +257,8 @@ class GIFTParser(PEP8Compatibility):
 				self.entity.close()
 				self.entity = self.entityStack.pop()
 				self.the_char = self.entity.the_char
+		if isinstance(self.the_char, int):
+			self.the_char = chr(self.the_char)
 
 	def buff_text(self, unused_chars):
 		pass
@@ -422,6 +425,8 @@ class GIFTParser(PEP8Compatibility):
 		position.
 		"""
 		match_len = 0
+		if isinstance(self.the_char, int):
+			self.the_char = chr(self.the_char)
 		for m in match:
 			if m != self.the_char and (self.the_char is None or m.lower() != self.the_char.lower()):
 				self.buff_text(match[:match_len])
@@ -496,14 +501,15 @@ class GIFTParser(PEP8Compatibility):
 		"""
 		self.refMode == GIFTParser.RefModeInContent
 		self.doc = doc
-		if self.checkAllErrors:
-			self.checkCompatibility = True
-		if self.checkCompatibility:
-			self.check_validity = True
-		if self.check_validity:
-			self.valid = True
-		else:
-			self.valid = None
+		# if self.checkAllErrors:
+		# 	self.checkCompatibility = True
+		# if self.checkCompatibility:
+		# 	self.check_validity = True
+		# if self.check_validity:
+		# 	self.valid = True
+		# else:
+		# 	self.valid = None
+		self.valid = None
 		self.nonFatalErrors = []
 		# self.parse_prolog()
 		if self.doc is None:
@@ -530,7 +536,10 @@ class GIFTParser(PEP8Compatibility):
 
 		By default calls :py:func:`~pyslet.gift.structures.is_s`
 		"""
-		return gift.is_s(self.the_char)
+		if isinstance(self.the_char, int):
+			return gift.is_s(chr(self.the_char))
+		else:
+			return gift.is_s(self.the_char)
 
 	def parse_s(self):
 		"""[3] S
@@ -555,51 +564,64 @@ class GIFTParser(PEP8Compatibility):
 			slen += 1
 		return ''.join(s)
 
-	def parse_required_literal(self, match, production="Literal String"):
-		"""Parses a required literal string.
-
-		https://github.com/swl10/pyslet/blob/master/pyslet/xml/parser.py#L1039
-
-		match
-			The literal string to match
+	def parse_required_s(self, production="[3] S"):
+		"""[3] S: Parses required white space
 
 		production
-			An optional string describing the context in which the literal was
-			expected.
+			An optional string describing the production being parsed.
+			This allows more useful errors than simple 'expected [3] S'
+			to be logged.
 
-		There is no return value.  If the literal is not matched a wellformed
-		error is generated.
+		If there is no white space then a well-formedness error is raised.
 		"""
-		if not self.parse_literal(match):
-			self.well_formedness_error("%s: Expected %s" % (production, match))
-
-	def parse_literal(self, match):
-		"""Parses an optional literal string.
-
-		https://github.com/swl10/pyslet/blob/master/pyslet/xml/parser.py#L1019
-
-		match
-			The literal string to match
-
-		Returns True if *match* is successfully parse and False otherwise.
-		There is no partial matching, if *match* is not found then the parser
-		is left in its original position.
-		"""
-		match_len = 0
-		for m in match:
-			if m != self.the_char and (self.the_char is None or
-				m.lower() != self.the_char.lower()):
-				self.buff_text(match[:match_len])
-				break
-			match_len += 1
-			self.next_char()
-		return match_len == len(match)
+		if not self.parse_s() and not self.dont_check_wellformedness:
+			self.well_formedness_error(production + ": Expected white space character")
 
 	def parse_entity_value(self):
+		"""[9] EntityValue
+
+		Parses an EntityValue, returning it as a string.
+
+		This method automatically expands other parameter entity references but does not
+		expand general or character references.
+
+		I *think* this handles references in the XML format that is not relevant in the
+		GIFT format.  It calls parse_quote(), and quotes are not special escape characters
+		in GIFT.
+		"""
+		# save_mode = self.refMode
+		# qentity = self.entity
+		# q = self.parse_quote()
 		raise NotImplementedError
 
 	def parse_system_literal(self):
+		"""value of literal returned as string *without* enclosing quotes.
+		Not relevant for GIFT format."""
 		raise NotImplementedError
+
+	def parse_char_data(self):
+		"""Parses a run of character data, and adds parsed data to current element.
+		"""
+		data = []
+		while self.the_char is not None:
+			if self.the_char == '\n':
+				break
+			self.is_s()
+			data.append(self.the_char)
+			self.next_char()
+			if len(data) >= gift.GIFTEntity.chunk_size:
+				data = ''.join(data)
+				try:
+					self.handle_data(data)
+				except gift.GIFTValidityError:
+					raise
+				data = []
+		data = ''.join(data)
+		try:
+			self.handle_data(data)
+		except gift.GIFTValidityError:
+			raise
+		return None
 
 	def parse_comment(self, got_literal=False):
 		"""[15] Comment
@@ -626,12 +648,48 @@ class GIFTParser(PEP8Compatibility):
 				self.next_char()
 		return ''.join(data)
 
+	control_chars = ('~', '=', '#', '}')
+
+	def parse_question_title(self, got_literal=False):
+		""" ::Question title::
+		"""
+		production = "Question Title"
+		data = []
+		if not got_literal:
+			self.parse_required_literal('::', production)
+		while self.the_char is not None:
+			if self.the_char in control_chars:
+				self.next_char()
+				break
+			else:
+				data.append(self.the_char)
+				self.next_char()
+		return ''.join(data)
+
+	def parse_question(self, got_literal=False):
+		raise NotImplementedError
+
+	def parse_correct_answer(self, got_literal=False):
+		raise NotImplementedError
+
+	def parse_wrong_answer(self, got_literal=False):
+		raise NotImplementedError
+
+	def parse_response_to_wrong_answer(self, got_literal=False):
+		raise NotImplementedError
+
+	def parse_pi(self):
+		# parsing a processing instruction in xml, denoted with '<?' literal
+		# I couldn't find the '<?' in a few of the simple qti xml examples.
+		# Assume not relevant for GIFT.
+		raise NotImplementedError
+
 	def parse_prolog(self):
-		# only relevant for XML documents
+		# not relevant for GIFT documents
 		raise NotImplementedError
 
 	def parse_decl(self, got_literal=False):
-		# only relevant for XML documents
+		# not relevant for XML documents
 		raise NotImplementedError
 
 	def parse_misc(self):
@@ -696,23 +754,24 @@ class GIFTParser(PEP8Compatibility):
 		:py:meth:`parse_element` calls is unwound to the point where it is allowed
 		by the context.
 		"""
-		production = "[39] element"
+		# production = "[39] element"
 		save_element = self.element
 		save_element_type = self.elementType
 		save_cursor = None
 
 		context = self.get_context()
+		# essentially, context = parser.element
 		empty = False
 		# get_context() returns either element or doc
 		# Document.add_child(self, child_class, name=None)
 		self.element = context.add_child(gift.Element, None)
-		if getattr(gift.Element, 'GIFTCONTENT', gift.GIFTMixedContent) == gift.GIFTEmpty:
-			empty = True
+		# Document.add_child https://github.com/swl10/pyslet/blob/master/pyslet/xml/structures.py#L654
+		# Element.add_child https://github.com/swl10/pyslet/blob/master/pyslet/xml/structures.py#L1872
+
+		# if getattr(gift.Element, 'GIFTCONTENT', gift.GIFTMixedContent) == gift.GIFTEmpty:
+		# 	empty = True
 		if not empty:
-			save_data_count = self.dataCount
 			self.parse_content()
-		if self.dataCount == save_data_count:
-			raise gift.GIFTFatalError(production + ": element had empty content %s" % self.element)
 		self.element.content_changed()
 		self.element = save_element
 		self.elementType = save_element_type
@@ -745,15 +804,13 @@ class GIFTParser(PEP8Compatibility):
 		This method returns a tuple of (name, attrs, emptyFlag) where:
 
 		name
-			the name of the element parsed
+			the name of the element parsed.
 
 		attrs
-			a dictionary of attribute values keyed by attribute name
+			a dictionary of attribute values keyed by attribute name.
 
 		emptyFlag
 			a boolean; True indicates that the tag was an empty element tag.
-
-		GIFT doesn't have element names nor attributes
 		"""
 		raise NotImplementedError
 
@@ -772,18 +829,65 @@ class GIFTParser(PEP8Compatibility):
 			indicates that the content contained data or markup not
 			allowed in this context
 		"""
+		in_question = False
+		in_responses = False
 		while True:
+			if isinstance(self.the_char, int):
+				self.the_char = chr(self.the_char)
+
 			if self.the_char == '/':
-				# First character of comment tag
+				self.parse_required_literal('//')
+				self.parse_comment(True)
+			# if self.the_char == '/':
+			# 	# First character of comment tag
+			# 	self.next_char()
+			# 	if self.the_char == '/':
+			# 		# Second character of comment tag
+			# 		self.parse_comment(True)
+			# 	else:
+			# 		self.well_formedness_error("Expected Comment")
+			elif self.the_char == ':':
 				self.next_char()
-				if self.the_char == '/':
-					# Second character of comment tag
-					self.parse_comment(True)
+				if self.the_char == ':' and not in_question:
+					in_question = True
+					self.next_char()
+					# question title or question
+					# first '::' precedes question title
+					# second '::' precedes actual question
+					self.parse_question_title()
 				else:
-					self.well_formedness_error("Expected Comment")
-			elif self.the_char is '/n' or self.the_char is None:
+					in_question = False
+					self.next_char()
+					self.parse_question()
+			elif self.the_char == '{':
+				# indicates start of answers
+				self.next_char()
+				in_responses = True
+			elif self.the_char == '=' and in_responses:
+				# correct answer
+				self.next_char()
+				self.parse_correct_answer()
+			elif self.the_char == '~' and in_responses:
+				# wrong answer
+				self.next_char()
+				self.parse_wrong_answer()
+			elif self.the_char == '#' and in_responses:
+				# response to wrong answer
+				self.parse_response_to_wrong_answer()
+			elif self.the_char == '}' and in_responses:
+				# end of question
+				self.next_char()
+				in_responses = False
+			elif self.the_char == '\n' or self.the_char == ' ':
+				self.next_char()
+			elif self.the_char is None:
 				# end of entity
 				return True
+			else:
+				pcdata = self.parse_char_data()
+				if pcdata:
+					return False
+				# raise GIFTFatalError("parse_content: unexpected character, %s" % self.the_char)
 		return True
 
 	def handle_data(self, data):

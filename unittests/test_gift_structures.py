@@ -6,6 +6,7 @@ import os.path
 import shutil
 import logging
 
+from io import StringIO
 from tempfile import mkdtemp
 from pyslet import rfc2396 as uri
 from pyslet.gift import structures
@@ -13,6 +14,7 @@ from pyslet.gift import structures
 
 def suite():
 	return unittest.TestSuite((
+		unittest.makeSuite(ClassMethodsTests, 'test'),
 		# unittest.makeSuite(GIFTCharacterTests, 'test'),
 		unittest.makeSuite(GIFTEntityTests, 'test'),
 		unittest.makeSuite(ElementTests, 'test'),
@@ -163,12 +165,25 @@ class Elements:
 	bad = BadElement
 
 
+class ClassMethodsTests(unittest.TestCase):
+
+	def test_declare(self):
+		class_map = {}
+		structures.map_class_elements(class_map, Elements)
+		self.assertTrue(issubclass(class_map['mixed'], structures.Element), "class type not declared")
+
+
 class GIFTEntityTests(unittest.TestCase):
 
 	def test_constructor(self):
 		e = structures.GIFTEntity(b"hello")
 		self.assertTrue(e.line_num == 1)
 		self.assertTrue(e.line_pos == 1)
+		self.assertTrue(isinstance(e.the_char, str) and e.the_char == 'h')
+		e = structures.GIFTEntity(StringIO("hello"))
+		self.assertTrue(e.line_num == 1)
+		self.assertTrue(e.line_pos == 1)
+		self.assertTrue(isinstance(e.the_char, str) and e.the_char == 'h')
 
 	def test_chars(self):
 		e = structures.GIFTEntity(b"hello")
@@ -176,6 +191,8 @@ class GIFTEntityTests(unittest.TestCase):
 			self.assertTrue(e.the_char == c)
 			e.next_char()
 		self.assertTrue(e.the_char is None)
+		e.reset()
+		self.assertTrue(e.the_char == 'h')
 
 	def test_lines(self):
 		e = structures.GIFTEntity(b"Hello\nWorld\n!")
@@ -384,22 +401,22 @@ class DocumentTests(unittest.TestCase):
 		self.assertTrue(d.root.get_document() is d,
 			'root not linked to document')
 
-	# def test_base(self):
-	# 	"""Test the use of a file path on construction"""
-	# 	fpath = os.path.abspath('fpath.txt')
-	# 	furl = str(uri.URI.from_path(fpath))
-	# 	d = structures.Document(base_uri=furl)
-	# 	self.assertTrue(d.get_base() == furl, "Base not set in constructor")
-	# 	self.assertTrue(d.root is None, 'root on construction')
-	# 	d = structures.Document(base_uri='fpath.txt', root=structures.Element)
-	# 	self.assertTrue(d.get_base() == furl,
-	# 		"Base not made absolute from relative URL:\n\t%s\n\t%s" %
-	# 		(furl, d.get_base()))
-	# 	self.assertTrue(isinstance(d.root, structures.Element),
-	# 		'root not created on construction')
-	# 	d = structures.Document()
-	# 	d.set_base(furl)
-	# 	self.assertTrue(d.get_base() == furl, "Base not set by set_base")
+	def test_base(self):
+		"""Test the use of a file path on construction"""
+		fpath = os.path.abspath('fpath.txt')
+		furl = str(uri.URI.from_path(fpath))
+		d = structures.Document(base_uri=furl)
+		self.assertTrue(d.get_base() == furl, "Base not set in constructor")
+		self.assertTrue(d.root is None, 'root on construction')
+		d = structures.Document(base_uri='fpath.txt', root=structures.Element)
+		self.assertTrue(d.get_base() == furl,
+			"Base not made absolute from relative URL:\n\t%s\n\t%s" %
+			(furl, d.get_base()))
+		self.assertTrue(isinstance(d.root, structures.Element),
+			'root not created on construction')
+		d = structures.Document()
+		d.set_base(furl)
+		self.assertTrue(d.get_base() == furl, "Base not set by set_base")
 
 	# def test_read_file(self):
 	# 	"""Test the reading of the Document from the file system"""
@@ -408,7 +425,7 @@ class DocumentTests(unittest.TestCase):
 	# 	d.read()
 	# 	root = d.root
 	# 	self.assertTrue(isinstance(root, structures.Element))
-	# 	self.assertTrue(root.giftname == 'tag' and root.get_value() == 'Hello World')
+	# 	self.assertTrue(root.get_value() == 'Hello World')
 	#
 	# Cannot find where root is set to an Element in the source code, when
 	# Document object instantiated with no root specified or d.read()
@@ -433,9 +450,10 @@ class DocumentTests(unittest.TestCase):
 	# 	flines = f.read().splitlines()
 	# 	f.close()
 	# 	# bytes always formats using unix-style newlines
-	# 	dlines = bytes(d).split(b'\n')
+	# 	# dlines = bytes(d).split(b'\n')
+	# 	dlines = bytes(d)
 	# 	self.assertTrue(dlines == flines, "GIFT output: %s" % bytes(d))
-	# 	# requires implementing __bytes__ method which relies on generate_gift()
+		# requires implementing __bytes__ method which relies on generate_gift()
 
 	def test_resolve_base(self):
 		"""Test the use of a resolve_uri and resolve_base"""
@@ -448,19 +466,20 @@ class DocumentTests(unittest.TestCase):
 		self.assertTrue(child.resolve_base() == 'file:///index.txt',
 			"No gift:base inheritance")
 		# Tests with a document follow
-		# furl = str(uri.URI.from_path(os.path.abspath('base.txt')))
-		# href = uri.URI.from_path(os.path.abspath('link.txt'))
+		furl = str(uri.URI.from_path(os.path.abspath('base.txt')))
+		href = uri.URI.from_path(os.path.abspath('link.txt'))
 		# href_path = href.abs_path
-		# href = str(href)
+		href = str(href)
 		# alt_ref = 'file:///hello/link.txt'
-		# d = structures.Document(base_uri='base.txt')
-		# self.assertTrue(d.get_base() == furl,
-		# 	"Base not resolved relative to w.d. by constructor")
+		d = structures.Document(base_uri='base.txt')
+		self.assertTrue(d.get_base() == furl,
+			"Base not resolved relative to w.d. by constructor")
 		# TODO: implement parsing for unittests/data_gift/base.txt
 		# d.read()
 		# tag = d.root
 		# self.assertTrue(
 		# 	tag.resolve_base() == furl, "Root element resolves from document")
+		# More here from: https://github.com/swl10/pyslet/blob/master/unittests/test_xml_structures.py#L660
 
 	# def test_create(self):
 	# 	"""Test the creating of the Document on the file system."""

@@ -37,3 +37,15 @@ range3 = range
 
 def dict_keys(d):
 	return dict.keys(d)
+
+
+def dict_values(d):
+	return dict.values(d)
+
+
+def dict_items(d):
+	return dict.items(d)
+
+
+def is_text(arg):
+	return isinstance(arg, str)
