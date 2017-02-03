@@ -155,22 +155,19 @@ class GIFTParserTests(unittest.TestCase):
 			self.assertTrue(p.the_char is None, "Short parse of Misc")
 
 	def test_element(self):
-		s = """//comment\n"""
-		# s = """//comment\n::Question title\n:: Question {\n=A correct answer\n~Wrong answer1\n#response to wrong answer1\n}"""
+		# s = """//comment\n"""
+		# s = "::Question title\n"
+		s = """//comment\n::Question title\n:: Question {\n=A correct answer\n~Wrong answer1\n}"""
 		with structures.GIFTEntity(s) as e:
 			p = parser.GIFTParser(e)
-			p.refMode = parser.GIFTParser.RefModeInContent
 			element = p.element = structures.Element("a")
-			numElems = 6
-			for i in range(numElems):
-				p.parse_element()
-			try:
-				p.parse_element()
-				self.fail("Parsed bad element.")
-			except parser.GIFTWellFormedError:
-				pass
+			p.parse_element()
 			children = list(element.get_children())
 			self.assertTrue(isinstance(children[0], structures.Element), "First element: %s" % repr(children[0]))
+			self.assertTrue(children[0].giftname == 'questionTitle', "First element name: %s" % repr(children[0].giftname))
+			self.assertTrue(children[0].get_value() == 'Question title')
+
+			# self.assertTrue(isinstance(children[1], structures.Element), "Second element: %s" % repr(children[1]))
 
 	# def test_empty_question(self):
 	# 	empty_q = ":: Question title :: Question {}"

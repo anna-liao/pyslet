@@ -1259,10 +1259,11 @@ class Element(Node):
 		if not self.is_mixed():
 			raise GIFTMixedContentError(self.__class__.__name__)
 		for child in self.get_children():
-			if isinstance(child, str):
-				yield str(child)
-			elif not ignore_elements:
-				raise GIFTMixedContentError(str(self))
+			yield str(child)
+			# if isinstance(child, str):
+			# 	yield str(child)
+			# elif not ignore_elements:
+			# 	raise GIFTMixedContentError(str(self))
 
 	def get_value(self, ignore_elements=False):
 		"""Returns a single object representing the element's content.

@@ -226,6 +226,8 @@ class GIFTParser:
 		self.dataCount = 0
 		self.noPERefs = False
 		self.gotPERef = False
+		self.in_question = False
+		self.in_responses = False
 
 	def get_context(self):
 		"""Returns the parser's context
@@ -261,7 +263,24 @@ class GIFTParser:
 			self.the_char = chr(self.the_char)
 
 	def buff_text(self, unused_chars):
-		pass
+		"""Buffers characters that have already been parsed.
+
+		unused_chars
+			A string of characters to be pushed back to the parser in
+			the order in which they are to be parsed.
+
+		The method enables characters to be pushed back into the parser
+		forcing them to be parsed next.  The current character is saved
+		and will be parsed (again) once the buffer is exhausted.
+		"""
+		if unused_chars:
+			if self.buff:
+				self.buff = list(unused_chars) + self.buff
+			else:
+				self.buff = list(unused_chars)
+				if self.entity.the_char is not None:
+					self.buff.append(self.entity.the_char)
+			self.the_char = self.buff[0]
 
 	def _get_buff(self):
 		if len(self.buff) > 1:
@@ -577,6 +596,16 @@ class GIFTParser:
 		if not self.parse_s() and not self.dont_check_wellformedness:
 			self.well_formedness_error(production + ": Expected white space character")
 
+	def parse_name(self):
+		# raise NotImplementedError
+		return None
+
+	def parse_required_name(self):
+		return None
+
+	def parse_names(self):
+		raise NotImplementedError
+
 	def parse_entity_value(self):
 		"""[9] EntityValue
 
@@ -650,29 +679,46 @@ class GIFTParser:
 
 	control_chars = ('~', '=', '#', '}')
 
+	def parse_element(self, name=None):
+		production = "[39] element"
+		save_element = self.element
+		save_element_type = self.elementType
+		save_cursor = None
+		if name:
+			context = self.get_context()
+			self.element = context.add_child(gift.Element, name)
+		self.parse_content()
+		self.element.content_changed()
+		self.element = save_element
+		self.elementType = save_element_type
+		self.cursor = save_cursor
+		return True
+
 	def parse_question_title(self, got_literal=False):
 		""" ::Question title::
 		"""
-		production = "Question Title"
-		data = []
-		if not got_literal:
-			self.parse_required_literal('::', production)
-		while self.the_char is not None:
-			if self.the_char in control_chars:
-				self.next_char()
-				break
-			else:
-				data.append(self.the_char)
-				self.next_char()
-		return ''.join(data)
+		raise NotImplementedError
+		# production = "Question Title"
+		# save_element =
+		# data = []
+		# if not got_literal:
+		# 	self.parse_required_literal('::', production)
+		# while self.the_char is not None:
+		# 	if self.the_char in control_chars:
+		# 		self.next_char()
+		# 		break
+		# 	else:
+		# 		data.append(self.the_char)
+		# 		self.next_char()
+		# return ''.join(data)
 
 	def parse_question(self, got_literal=False):
 		raise NotImplementedError
 
-	def parse_correct_answer(self, got_literal=False):
+	def parse_correct_response(self, got_literal=False):
 		raise NotImplementedError
 
-	def parse_wrong_answer(self, got_literal=False):
+	def parse_wrong_response(self, got_literal=False):
 		raise NotImplementedError
 
 	def parse_response_to_wrong_answer(self, got_literal=False):
@@ -728,56 +774,6 @@ class GIFTParser:
 		"""
 		raise NotImplementedError
 
-	def parse_element(self):
-		"""[39] element
-
-		The class used to represent the element is determined by calling the
-		:py:meth:`~pyslet.gift.structures.Document.get_element_class`
-		method of the current document.  If there is no document yet then a
-		new document is created automatically (see :py:meth:`parse_document` for
-		more information).
-
-		The element is added as a child of the current element using
-		:py:meth:`Node.add_child`.
-
-		The method returns a boolean value:
-
-		True
-			the element was parsed normally
-
-		False
-			the element is not allowed in this context
-
-		The second case only occurs when the :py:attrs:`sgml_omittag` option is
-		in use and it indicates that the content of the enclosing element has ended.
-		The Tag is buffered so that it can be reparsed when the stack of nested
-		:py:meth:`parse_element` calls is unwound to the point where it is allowed
-		by the context.
-		"""
-		# production = "[39] element"
-		save_element = self.element
-		save_element_type = self.elementType
-		save_cursor = None
-
-		context = self.get_context()
-		# essentially, context = parser.element
-		empty = False
-		# get_context() returns either element or doc
-		# Document.add_child(self, child_class, name=None)
-		self.element = context.add_child(gift.Element, None)
-		# Document.add_child https://github.com/swl10/pyslet/blob/master/pyslet/xml/structures.py#L654
-		# Element.add_child https://github.com/swl10/pyslet/blob/master/pyslet/xml/structures.py#L1872
-
-		# if getattr(gift.Element, 'GIFTCONTENT', gift.GIFTMixedContent) == gift.GIFTEmpty:
-		# 	empty = True
-		if not empty:
-			self.parse_content()
-		self.element.content_changed()
-		self.element = save_element
-		self.elementType = save_element_type
-		self.cursor = save_cursor
-		return True
-
 	def check_attributes(self, name, attrs):
 		""" Checks *attrs* against the declarations for an element.
 		"""
@@ -817,6 +813,16 @@ class GIFTParser:
 	def parse_attribute(self):
 		raise NotImplementedError
 
+	def parse_etag(self):
+		"""[42] ETag
+
+		For now, assume end tag is always new line '\n'
+		"""
+		production = "[42] ETag"
+		self.parse_required_literal('\n')
+		# self.parse_s()
+		return
+
 	def parse_content(self):
 		"""[43] content
 
@@ -829,8 +835,8 @@ class GIFTParser:
 			indicates that the content contained data or markup not
 			allowed in this context
 		"""
-		in_question = False
-		in_responses = False
+		# in_question = False
+		# in_responses = False
 		while True:
 			if isinstance(self.the_char, int):
 				self.the_char = chr(self.the_char)
@@ -848,46 +854,51 @@ class GIFTParser:
 			# 		self.well_formedness_error("Expected Comment")
 			elif self.the_char == ':':
 				self.next_char()
-				if self.the_char == ':' and not in_question:
-					in_question = True
+				if self.the_char == ':' and not self.in_question:
+					self.in_question = True
 					self.next_char()
 					# question title or question
 					# first '::' precedes question title
 					# second '::' precedes actual question
-					self.parse_question_title()
+					# self.parse_question_title()
+					self.parse_element('questionTitle')
 				else:
-					in_question = False
+					self.in_question = False
 					self.next_char()
-					self.parse_question()
+					# self.parse_question()
+					self.parse_element('question')
 			elif self.the_char == '{':
-				# indicates start of answers
-				self.next_char()
-				in_responses = True
-			elif self.the_char == '=' and in_responses:
+				# indicates end of question
+				# self.next_char()
+				self.buff_text('{')
+				self.in_responses = True
+			elif self.the_char == '=' and self.in_responses:
 				# correct answer
 				self.next_char()
-				self.parse_correct_answer()
-			elif self.the_char == '~' and in_responses:
+				# self.parse_correct_response()
+				self.parse_element('correctResponse')
+			elif self.the_char == '~' and self.in_responses:
 				# wrong answer
 				self.next_char()
-				self.parse_wrong_answer()
-			elif self.the_char == '#' and in_responses:
-				# response to wrong answer
-				self.parse_response_to_wrong_answer()
-			elif self.the_char == '}' and in_responses:
+				# self.parse_wrong_answer()
+				self.parse_element('wrongResponse')
+			# elif self.the_char == '#' and in_responses:
+			# 	# response to wrong answer
+			# 	self.parse_response_to_wrong_answer()
+			elif self.the_char == '}' and self.in_responses:
 				# end of question
 				self.next_char()
-				in_responses = False
-			elif self.the_char == '\n' or self.the_char == ' ':
+				self.in_responses = False
+			elif self.the_char == ' ':
 				self.next_char()
+			elif self.the_char == '\n':
+				self.next_char()
+				return True
 			elif self.the_char is None:
 				# end of entity
 				return True
 			else:
-				pcdata = self.parse_char_data()
-				if pcdata:
-					return False
-				# raise GIFTFatalError("parse_content: unexpected character, %s" % self.the_char)
+				self.parse_char_data()
 		return True
 
 	def handle_data(self, data):

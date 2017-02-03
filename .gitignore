@@ -36,4 +36,4 @@ flake8-count.txt
 py3env
 py3-venv
 
-gift_test_init.py
+gift_test*
