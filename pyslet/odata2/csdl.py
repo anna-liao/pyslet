@@ -707,8 +707,9 @@ class Parser(xsi.BasicParser):
                     self.require(":")
                     zm = self.require_production(self.parse_integer(0, 24),
                                                  "zminute")
-                    logging.warn("DateTime ignored zone offset: %s%.2i:%.2i",
-                                 z, zh, zm)
+                    logging.warning(
+                        "DateTime ignored zone offset: %s%.2i:%.2i",
+                        z, zh, zm)
             except ValueError:
                 self.setpos(zpos)
                 pass
@@ -1048,7 +1049,10 @@ class SimpleValue(UnicodeMixin, EDMValue):
         NULL values cannot be represented in literal form and will raise
         ValueError."""
         if self.value is None:
-            raise ValueError("%s is NULL" % self.name)
+            if self.p_def:
+                raise ValueError("%s is NULL" % self.p_def.name)
+            else:
+                raise ValueError("NULL value has no text representation")
         return to_text(self.value)
 
     def set_from_literal(self, value):
@@ -1056,6 +1060,17 @@ class SimpleValue(UnicodeMixin, EDMValue):
 
         You can get the literal form of a value using the unicode function."""
         raise NotImplementedError
+
+    def set_default_value(self):
+        if self.p_def and self.p_def.defaultValue is not None:
+            self.set_from_literal(self.p_def.defaultValue)
+        elif self.p_def and not self.p_def.nullable:
+            # no default, not nullable - this is a ConstrainError
+            raise ConstraintError(
+                "%s: Non-nullable property has no default value" %
+                self.p_def.name)
+        else:
+            self.value = None
 
     def set_null(self):
         """Sets the value to NULL"""
@@ -1172,7 +1187,7 @@ class BooleanValue(SimpleValue):
         elif isinstance(new_value, bool):
             self.value = new_value
         else:
-            raise TypeError("Can't set Boolean from %s" % str(new_value))
+            raise TypeError("Can't set Boolean from %s" % repr(new_value))
 
 
 class NumericValue(SimpleValue):
@@ -2014,6 +2029,11 @@ class Complex(EDMValue, TypeInstance):
         """Sets all simple property values to NULL recursively"""
         for k, v in self.iteritems():
             v.set_null()
+
+    def set_default_value(self):
+        """Sets all simple property values to defaults recursively"""
+        for k, v in self.iteritems():
+            v.set_default_value()
 
     def merge(self, new_value):
         """Sets this value from *new_value* which must be a
@@ -3115,9 +3135,8 @@ class EntityCollection(DictionaryLike, PEP8Compatibility):
         """Returns a new py:class:`Entity` instance suitable for adding
         to this collection.
 
-        The properties of the entity are set to their defaults, or to
-        null if no default is defined (even if the property is marked
-        as not nullable).
+        The data properties of the entity are set to null, *not* to their
+        default values, even if the property is marked as not nullable.
 
         The entity is not considered to exist until it is actually added
         to the collection.  At this point we deviate from
@@ -3175,8 +3194,16 @@ class EntityCollection(DictionaryLike, PEP8Compatibility):
         create two entities with duplicate keys)."""
         raise NotImplementedError
 
-    def update_entity(self, entity):
+    def update_entity(self, entity, merge=True):
         """Updates *entity* which must already be in the entity set.
+
+        The optional merge parameter can be used to force replace
+        semantics instead of the default merge.  When merging, any
+        unselected data properties are left unchanced.  With merge=False
+        unselected data properties are *replaced* with their default
+        values as defined by the underlying container.  You will have to
+        read back the entity (without a select filter) to obtain those
+        defaults as the values in the entity objects.
 
         Data providers must override this method if the collection is
         writable."""
@@ -3438,9 +3465,9 @@ class NavigationCollection(EntityCollection):
             base_collection.insert_entity(entity)
             self[entity.key()] = entity
 
-    def update_entity(self, entity):
+    def update_entity(self, entity, merge=True):
         with self.entity_set.open() as base_collection:
-            base_collection.update_entity(entity)
+            base_collection.update_entity(entity, merge)
 
     def __setitem__(self, key, value):
         raise NotImplementedError(
@@ -4158,7 +4185,7 @@ class EntityType(Type):
             if len(plist) > 1:
                 # these are all duplicates!
                 for p in plist:
-                    logging.warn(
+                    logging.warning(
                         "Ambiguous navigation: %s.%s", self.name, p.name)
                     p.mark_as_ambiguous()
         self.Key.update_type_refs(scope, stop_on_errors)
@@ -4592,8 +4619,8 @@ class EntitySet(CSDLElement):
                 raise
 
     def set_unbound_principal(self, aset_end):
-        logging.warn("Entity set %s has an unbound principal: %s",
-                     self.name, aset_end.otherEnd.entity_set.name)
+        logging.warning("Entity set %s has an unbound principal: %s",
+                        self.name, aset_end.otherEnd.entity_set.name)
         if not self.bad_principal and self.unboundPrincipal is None:
             self.unboundPrincipal = aset_end
         else:

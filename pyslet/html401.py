@@ -463,7 +463,14 @@ directly or with a list or tuple of Length values."""
         if len(self.values) < 3:
             raise ValueError(
                 "Circle test requires 3 coordinates: %s" % str(self.values))
-        if width < height:
+        if width is None:
+            if height is None:
+                rmax = None
+            else:
+                rmax = height
+        elif height is None:
+            rmax = width
+        elif width < height:
             rmax = width
         else:
             rmax = height
@@ -1982,13 +1989,14 @@ class Acronym(Phrase):
 
 class Address(AttrsMixin, BlockMixin, InlineContainer):
 
-    """Address (of author)
+    """Address \\(of author)
 ::
 
     <!ELEMENT ADDRESS - - ((%inline;)|P)*  -- information on author -->
     <!ATTLIST ADDRESS
         %attrs;     -- %coreattrs, %i18n, %events --
-        >"""
+        >
+"""
     XMLNAME = (XHTML_NAMESPACE, 'address')
 
     def check_model(self, child_class):

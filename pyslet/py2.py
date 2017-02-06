@@ -7,6 +7,7 @@ similar role to the six module but the idea is to minimise the number of
 required fixes by making the Pyslet code as Python3 native as
 possible."""
 
+import io
 import sys
 import types
 
@@ -57,6 +58,9 @@ if py2:
         else:
             raise TypeError("Expected str or unicode: %s" % repr(arg))
 
+    def is_ascii(arg):
+        return isinstance(arg, str)
+
     def force_ascii(arg):
         if isinstance(arg, unicode):
             return arg.encode('ascii')
@@ -89,6 +93,8 @@ if py2:
         if isinstance(arg, unicode):
             return arg.encode('ascii')
         return arg
+
+    to_bytes = str
 
     def is_byte(arg):
         return isinstance(arg, bytes) and len(arg) == 1
@@ -142,7 +148,14 @@ if py2:
 
     import __builtin__ as builtins
 
-    from urllib import urlopen
+    input3 = raw_input
+
+    from urllib import (            # noqa : unused import
+        urlencode,
+        urlopen,
+        quote as urlquote
+        )
+    from urlparse import parse_qs   # noqa : unused import
 
 else:
     suffix = '3'
@@ -183,6 +196,13 @@ else:
             raise TypeError("Expected str: %s" % repr(arg))
         return arg
 
+    def is_ascii(arg):
+        if isinstance(arg, str):
+            arg.encode('ascii')
+            return True
+        else:
+            return False
+
     def force_ascii(arg):
         if isinstance(arg, bytes):
             return arg.decode('ascii')
@@ -214,6 +234,12 @@ else:
         if isinstance(arg, str):
             return arg.encode('ascii')
         return arg
+
+    def to_bytes(arg):
+        if hasattr(arg, '__bytes__'):
+            return arg.__bytes__()
+        else:
+            return str(arg).encode('ascii')
 
     def is_byte(arg):
         return isinstance(arg, int) and 0 <= arg <= 255
@@ -261,7 +287,14 @@ else:
 
     import builtins     # noqa : unused import
 
+    input3 = input
+
     from urllib.request import urlopen      # noqa : unused import
+    from urllib.parse import (              # noqa : unused import
+        parse_qs,
+        quote as urlquote,
+        urlencode
+        )
 
 
 class UnicodeMixin(object):
@@ -427,7 +460,19 @@ class BoolMixin(object):
     """Mixin class for handling legacy __nonzero__
 
     For compatibility with Python 2 this class defines __nonzero__
-    returning the value of the metho __bool__."""
+    returning the value of the method __bool__."""
 
     def __nonzero__(self):
         return self.__bool__()
+
+
+def output(txt):
+
+    """Simple function for writing to stdout
+
+    Not as sophisticated as Python 3's print function but designed to be
+    more of a companion to the built in input."""
+    if isinstance(sys.stdout, io.TextIOBase):
+        sys.stdout.write(txt)
+    else:
+        sys.stdout.write(txt.encode('utf-8'))

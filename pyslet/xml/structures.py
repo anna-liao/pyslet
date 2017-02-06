@@ -195,9 +195,7 @@ name_start_char = CharClass(
 def is_name_start_char(c):
     return name_start_char.test(c)
 
-
 is_name_start_char = name_start_char.test   # noqa (def used by decorator)
-"""Tests if the character *c* matches production [4] NameStartChar."""
 
 
 name_char = CharClass(name_start_char, '-', '.', ('0', '9'), character(0xb7),
@@ -210,7 +208,6 @@ def is_name_char(c):
     return name_char.test(c)
 
 is_name_char = name_char.test   # noqa (def used by decorator)
-"""Tests production [4a] NameChar"""
 
 
 @old_function('IsValidName')
@@ -2334,7 +2331,7 @@ class Element(Node):
                 <data>This is <em>the</em> value</data>
 
                 # to behave like this:
-                data.get_value(True)==u"This is  value" """
+                data.get_value(True) == "This is  value" """
         return join_characters(self.generate_value(ignore_elements))
 
     @old_method('SetValue')
@@ -3587,7 +3584,7 @@ class XMLEntity(MigratedClass):
             src_file.seek(0)
             return
         while len(magic) < 4:
-            magic = magic + 'Q'
+            magic = magic + b'Q'
         if magic[:2] == b'\xff\xfe' or magic[:2] == b'\xfe\xff':
             if magic[2:] != b'\x00\x00':
                 magic = magic[:2]
