@@ -11,6 +11,8 @@ import warnings
 from copy import copy
 from .py3 import (
     PY2,
+	# is_text,
+	dict_items,
 	join_characters,
 	uspace,
 	uempty,
@@ -304,6 +306,9 @@ class Node(object):
 		used as a sentinel to simplify traversal of the hierarchy and is set
 		to None."""
 
+	def __str__(self):
+		raise NotImplementedError
+
 	def get_children(self):
 		"""Returns an iterator over this object's children."""
 		raise NotImplementedError
@@ -348,7 +353,8 @@ class Node(object):
 		raise NotImplementedError
 
 	def get_space(self):
-		raise NotImplementedError
+		# raise NotImplementedError
+		return None
 
 
 GIFTEmpty = ElementType.EMPTY
@@ -685,14 +691,14 @@ class Element(Node):
 		if self.id:
 			attrs[self.__class__.ID] = self.id
 		armap = self._armap()
-		for attr_name, desc in dict.items(armap):
+		for attr_name, desc in dict_items(armap):
 			name, encoder = desc
 			value = getattr(self, attr_name, None)
 			if isinstance(value, list):
 				value = uspace.join(encoder(v) for v in value)
 			elif isinstance(value, dict):
 				lvalue = []
-				for key, freq in dict.items(value):
+				for key, freq in dict_items(value):
 					lvalue = lvalue + [encoder(key)] * freq
 				value = uspace.join(sorted(lvalue))
 			elif value is not None:
@@ -775,7 +781,7 @@ class Element(Node):
 				value = uspace.join(encoder(v) for v in value)
 			elif isinstance(value, dict):
 				lvalue = []
-				for key, freq in dict.items(value):
+				for key, freq in dict_items(value):
 					lvalue = lvalue + [encoder(key)] * freq
 				value = uspace.join(sorted(lvalue))
 			else:
@@ -853,18 +859,18 @@ class Element(Node):
 			return
 		e = self
 		while isinstance(e, Element):
-			spc = e.get_space()
-			if spc is not None:
-				if spc == 'preserve':
-					yield first_child
-					try:
-						while True:
-							yield next(children)
-						# will raise StopIteration and terminate method
-					except StopIteration:
-						return
-				else:
-					break
+			# spc = e.get_space()
+			# if spc is not None:
+			# 	if spc == 'preserve':
+			# 		yield first_child
+			# 		try:
+			# 			while True:
+			# 				yield next(children)
+			# 			# will raise StopIteration and terminate method
+			# 		except StopIteration:
+			# 			return
+			# 	else:
+			# 		break
 			e = e.parent
 		try:
 			ichild = next(children)
@@ -1254,10 +1260,11 @@ class Element(Node):
 		if not self.is_mixed():
 			raise GIFTMixedContentError(self.__class__.__name__)
 		for child in self.get_children():
-			if isinstance(child, str):
-				yield str(child)
-			elif not ignore_elements:
-				raise GIFTMixedContentError(str(self))
+			yield str(child)
+			# if isinstance(child, str):
+			# 	yield str(child)
+			# elif not ignore_elements:
+			# 	raise GIFTMixedContentError(str(self))
 
 	def get_value(self, ignore_elements=False):
 		"""Returns a single object representing the element's content.
@@ -1412,6 +1419,13 @@ class Element(Node):
 		s = io.BytesIO()
 		for data in self.generate_gift():
 			s.write(data.encode('utf-8'))
+		return s.getvalue()
+
+	def __str__(self):
+		"""Returns the GIFT element as a str"""
+		s = io.StringIO()
+		for data in self.generate_gift(root=True):
+			s.write(data)
 		return s.getvalue()
 
 	def deepcopy(self, parent=None):
@@ -1604,7 +1618,21 @@ class Element(Node):
 
 		Yields character strings.
 		"""
-		raise NotImplementedError
+		children = self.get_canonical_children()
+		try:
+			child = next(children)
+			while True:
+				if isinstance(child, str):
+					yield child
+				else:
+					for s in child.generate_gift():
+						yield s
+				try:
+					child = next(children)
+				except StopIteration:
+					break
+		except StopIteration:
+			yield '%s' % (self.giftname)
 
 	def write_gift(self):
 		"""Writes serialized GIFT to an output stream.
@@ -1708,6 +1736,7 @@ class Document(Node):
 	def __init__(self, root=None, base_uri=None, **kws):
 		base_uri = kws.get('baseURI', base_uri)
 		super(Document, self).__init__()
+		# base_uri = kws.get('baseURI', base_uri)
 		self.base_uri = None
 		self.root = None
 		"""The root element or None if no root element has been created yet.
@@ -1734,21 +1763,17 @@ class Document(Node):
 
 	def __bytes__(self):
 		"""Returns the GIFT document as a string"""
-		"""
 		s = io.BytesIO()
-		self.write_txt(s, escape_char_data7)
+		self.write_gift(s)
 		return s.getvalue()
-		"""
 
-	def __unicode__(self):
-		"""Returns GIFT document as unicode string"""
-		pass
-		"""
+	def __str__(self):
+		"""Returns GIFT document as string"""
+		# raise NotImplementedError
 		s = io.StringIO()
-		for data in self.generate_txt(escape_char_data):
+		for data in self.generate_gift():
 			s.write(data)
 		return s.getvalue()
-		"""
 
 	def GIFTParser(self, entity):
 		"""Creates a parser for this document
@@ -1836,7 +1861,8 @@ class Document(Node):
 		Derived documents can override this behaviour to return either "preserve"
 		or "default" to affect space handling.
 		"""
-		raise NotImplementedError
+		# raise NotImplementedError
+		return None
 
 	def validation_error(self, msg, element, data=None, aname=None):
 		"""Called when a validation error is triggered.
@@ -2012,7 +2038,7 @@ class Document(Node):
 		this method uses to create the output which is always UTF-8 encoded.
 		"""
 		for s in self.generate_gift():
-			writer.write(s)
+			writer.write(s.encode('utf-8'))
 
 	def update(self, **kws):
 		"""Updates the Document.
@@ -2205,19 +2231,6 @@ class GIFTEntity():
 		self.chunk = 1
 		self.base_pos = self.char_source.tell()
 		self.reset()
-		"""
-		self.data_source = src
-		self.auto_detect_encoding(self.data_source)
-		if self.encoding is None:
-			self.encoding = 'utf-8'
-			self.char_source = self.data_source
-			self.data_source = None
-		else:
-			self.char_source = codecs.getreader(self.encoding)(self.data_source)
-		self.chunk = 1
-		self.base_pos = self.char_source.tell()
-		self.reset()
-		"""
 
 	def open_uri(self, src, **kws):
 		"""Opens the entity from a URI.
@@ -2473,10 +2486,11 @@ def map_class_elements(class_map, scope):
 	mapped."""
 	if not isinstance(scope, dict):
 		scope = scope.__dict__
-	for name, obj in dict.items(scope):
+	# scope is a namespace, mappingproxy
+	for name, obj in scope.items():
 		if issubclass(type(obj), type) and issubclass(obj, Element):
 			if hasattr(obj, 'GIFTNAME'):
-				if obj.XMLNAME in class_map:
+				if obj.GIFTNAME in class_map:
 					raise DuplicateGIFTNAME(
 						"%s and %s have matching GIFTNAMEs" %
 						(obj.__name__, class_map[
