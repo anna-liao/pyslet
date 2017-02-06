@@ -30,3 +30,7 @@ samples/noticeboard/pyslet
 pep8-count.txt
 flake8-count.txt
 
+.DS_Store
+gift_test*
+py3env
+
