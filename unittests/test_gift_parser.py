@@ -52,24 +52,24 @@ class GIFTParserTests(unittest.TestCase):
 		with structures.GIFTEntity("hello") as e:
 			parser.GIFTParser(e)
 
-	# def test_rewind(self):
-	# 	data = "Hello\r\nWorld\nCiao\rTutti!"
-	# 	data2 = "Hello\nWorld\nCiao\nTutti!"
-	# 	with structures.GIFTEntity(data) as e:
-	# 		p = parser.GIFTParser(e)
-	# 		for i in range(len(data2)):
-	# 			self.assertTrue(p.the_char == data2[i],
-	# 				"Failed at data[%i] before look ahead" % i)
-	# 			for j in range(5):
-	# 				data = []
-	# 				for k in range(j):
-	# 					if p.the_char is not None:
-	# 						data.append(p.the_char)
-	# 					p.next_char()
-	# 				p.buff_text(''.join(data))
-	# 				self.assertTrue(p.the_char == data2[i],
-	# 					"Failed at data[%i] after Rewind(%i)" % (i, j))
-	# 			p.next_char()
+	def test_rewind(self):
+		data = "Hello\r\nWorld\nCiao\rTutti!"
+		data2 = "Hello\nWorld\nCiao\nTutti!"
+		with structures.GIFTEntity(data) as e:
+			p = parser.GIFTParser(e)
+			for i in range(len(data2)):
+				self.assertTrue(p.the_char == data2[i],
+					"Failed at data[%i] before look ahead" % i)
+				for j in range(5):
+					data = []
+					for k in range(j):
+						if p.the_char is not None:
+							data.append(p.the_char)
+						p.next_char()
+					p.buff_text(''.join(data))
+					self.assertTrue(p.the_char == data2[i],
+						"Failed at data[%i] after Rewind(%i)" % (i, j))
+				p.next_char()
 
 	# def test_document(self):
 	# 	os.chdir(TEST_DATA_DIR)
