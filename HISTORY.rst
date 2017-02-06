@@ -53,8 +53,200 @@ you use the bytes type (and the 'b' prefix on any string constants) when
 initialising OData entity properties of type Edm.Binary.  Failure to do
 so will raise an error in Python 3.
 
+*Build 20161205*
 
-Build 20160405:
+#23 Framework for WSGI-basd LTI Applications
+
+Re-engineered Session support in the wsgi module to reduce database
+load, replacing the Session table completely with signed cookies.  If
+you have used the wsgi.SessionApp class directly this will be a breaking
+change but these classes will remain experimental until this item is
+closed out.  The database schema required to support LTI has changed
+slightly as a result.
+
+Changed from Django templates to use Jinja2 (this requires almost no
+changes to the actual sample code templates and makes the intention of
+the samples much clearer).  Thanks to Christopher Lee for recommending
+this change.
+
+#58 OData default values (PUT/PATCH/MERGE)
+
+Warning: if you use Pyslet for an OData server please check that PUTs
+are still working as required.
+
+Changed the SQL data stores to use DEFAULT values from the metadata file
+as part of the CREATE TABLE queries.  Modified update_entity in memds,
+and SQL storage layers to use MERGE semantics by default, added option
+to enable replace (PUT) semantics using column defaults. This differs
+from the previous (incorrect behaviour) where unselected properties were
+set to NULL.
+
+Updated OData server to support MERGE and ensured that PUT now uses the
+correct semantics (set to default instead of NULL) for values missing
+from the incoming request.
+
+Improved error handling to reduce log noise in SQL layer.
+
+
+*Build 20161113*
+
+#47 Improve CharClass-derived doc strings
+
+Fixed - no functional changes.
+
+*Build 20161112*
+
+#38 Python 3 compatibility work (ongoing)
+
+Possible breaking change to wsgi module to refactor authority setting to
+"canonical_root", modified WSGIContext object to accept an optional
+canonical_root argument and removed the optional authority argument from
+get_app_root and get_url.  The authority setting was previously a
+misnomer and the wsgi sammples were not working properly with localhost.
+
+scihub.esa.int has been renamed to scihub.copernicus.eu and the sample
+code has been updated accordingly with the latest metadata-fixes and
+tested using Python 3.
+
+#56 Bug when handling 401 responses in HTTP client
+
+Reported as "Garbage received when server delays response" - the issue
+affected any response that was received as a result of a resend (after a
+redirect or 401 response). The stream used to receive the data in the
+follow-up request was not being reset correctly and this resulted in a
+chunk of 0x00 bytes being written before the actual content.
+
+This bug was discovered following changes in the 20160209 build when
+StringIO was replaced with BytesIO for Python 3 compatibility.
+StringIO.truncate moves the stream pointer, BytesIO.truncate does not.
+As a result all resends where the 3xx or 401 response had a non-zero
+length body were being affected.  Previously the bug only affected the
+rarer use case of resends of streamed downloads to real files, i.e.,
+requests created by passing an open file in the res_body argument of
+ClientRequest.
+
+With thanks to @karurosu for reporting.
+
+Untracked:
+
+Added compatibility in HTTP client for parsing dates from headers where
+the server uses the zone designator "UTC" instead of the required "GMT".
+
+
+*Build 20161110*
+
+#12 bug when using numeric or named parameters in DB API
+
+Added support for pyformat in DB APIs as part of enabling support for
+PyMySQL.
+
+#38 Python 3 compatibility work (ongoing)
+
+Updated more samples to work in Python 3, including the weather OData
+service using MySQL connected through PyMySQL as MySQLdb is not
+supported in Python 3.
+
+Untracked:
+
+Caught bug in autodetection of character set in XML parser when running
+under Python 3 and attempting to parse empty files.
+
+
+*Build 20161109*
+
+#3 PEP-8 driven refactoring (complete)
+
+Updated pep8-regression checker to walk all source files (including
+unittests and samples) - implemented final fixes to files previously
+missed.
+
+#38 Python 3 compatibility work (ongoing)
+
+Added output function to py2 module to assist with examples.
+
+Updated memcache.py sample code and documentation and tested in Python 3.
+
+
+*Build 20161108*
+
+#38 Python 3 compatibility work (ongoing)
+
+IMS LTI module tests passing in Python 3, setup.py install and all unit
+tests also now succeed making this build the first version workable in
+Python 3.
+
+
+*Build 20161106*
+
+#38 Python 3 compatibility work (ongoing)
+
+IMS CC modules, qml, rtf (placeholder) and wsgi modules: tests passing
+in Python 3.
+
+Untracked fixes:
+
+vfs: VirtualFilePath objects are now sortable.
+
+http.cookie: caught nasty bug in cookie generation code (Python 3 only)
+
+py2: added to_bytes and is_ascii functions and various re-mapped
+standard url functions
+
+
+*Build 20161104*
+
+#38 Python 3 compatibility work (ongoing)
+
+QTI v1 modules (including migration code): tests passing in Python 3.
+
+
+*Build 20161103*
+
+#38 Python 3 compatibility work (ongoing)
+
+IMS Content Packaging and Metadata modules: tests passing in Python 3
+
+
+*Build 20161102*
+
+#38 Python 3 compatibility work (ongoing)
+
+QTI v2 modules: tests passing in Python 3.
+
+
+*Build 20161030*
+
+#49 Fixed OData serialisation of LongDescription element
+
+Typo in pyslet/odata2/csdl.py - thanks to @thomaseitler
+
+#51 Bug fixes and improvements to OData JSON date formats
+
+We now accept ISO string formatted dates for both DateTime and
+DateTimeOffset.  Note that providing a timezone other than Z (+00:00)
+when setting a DateTime will cause the time to be zone-shifted to UTC
+*before* the value is set.  Thanks to @ianwj5int.
+
+#53 Extended OData DateTimeValue to be set from datetime.date
+
+You can now set DateTimeValue using a standard python datetime.date, the
+value is extended to be 00:00:00 on that date.  Thanks to @nmichaud
+
+#54 Fixed Atom Date handling bug
+
+Thanks to @nmichaud
+
+#55 Replaced `print_exception` with proper logging
+
+Thanks to @ianwj5int for reporting.
+
+Untracked changes:
+
+Fixed a bug in the XML tests that shows up on Windows if the xml test
+files are checked out with auto-translation of line ends.
+
+
+*Build 20160405*
 
 #38 Python 3 compatibility work (ongoing)
 
@@ -67,7 +259,7 @@ Fixed a bug in the detect_encoding function in unicode5 module (most
 likely benign).
 
 
-Build 20160327:
+*Build 20160327*
 
 #3 PEP-8 driven refactoring (ongoing)
 
@@ -82,7 +274,7 @@ OData v2 core, csdl, edmx and metadata modules refactored, Python 3
 tests passing
 
 
-Build 20160313:
+*Build 20160313*
 
 #3 PEP-8 driven refactoring (ongoing)
 
@@ -100,7 +292,7 @@ Deprecated XML Element construction with name override to improve
 handling of super.
 
 Fixed broken legacy name Expand in OData package.  Bug introduced with
-improvements to method decorators in 20160223 build.
+improvements to method decorators in 20160223 Build.
 
 Fixed a bug in the parsing of HTML content where unexpected elements
 that belong in the <head> were causing any preceding <body> content to
@@ -112,7 +304,7 @@ Fixed a bug in the XML parser where the parsed DTD was not being set
 in the Document instance.
 
  
-Build 20160225:
+*Build 20160225*
  
 #3 PEP-8 driven refactoring (ongoing)
 
@@ -149,7 +341,7 @@ refactored to catch StopIteration as per:
 https://www.python.org/dev/peps/pep-0479/
 
 
-Build 20160221:
+*Build 20160221*
 
 #3 PEP-8 driven refactoring (ongoing)
 
@@ -175,7 +367,7 @@ may wish to wait before upgrading until that module is also converted
 (coming soon).
 
 
-Build 20160209:
+*Build 20160209*
 
 #38 Python 3 compatibility work
 

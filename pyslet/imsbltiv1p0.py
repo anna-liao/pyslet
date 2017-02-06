@@ -8,22 +8,31 @@ releases.  Use with caution.
 import logging
 import os
 import random
-import string
 import time
-import urlparse
 
 from hashlib import sha256
 
-import pyslet.odata2.csdl as edm
-import pyslet.odata2.core as odata
-import pyslet.odata2.metadata as edmx
-import pyslet.odata2.sqlds as sql
-import pyslet.wsgi as wsgi
-import pyslet.xml.structures as xml
-
+from pyslet import iso8601 as iso
+from pyslet import wsgi
+from pyslet.odata2 import csdl as edm
+from pyslet.odata2 import core as odata
+from pyslet.odata2 import metadata as edmx
+from pyslet.odata2 import sqlds as sql
+from pyslet.py2 import (
+    byte_value,
+    dict_items,
+    dict_keys,
+    force_bytes,
+    long2,
+    parse_qs,
+    range3,
+    ul
+    )
 from pyslet.pep8 import MigratedClass, old_method
 from pyslet.rfc2396 import URI
 from pyslet.urn import URN
+from pyslet.xml import structures as xml
+
 
 try:
     from oauthlib import oauth1 as oauth
@@ -384,11 +393,11 @@ class ToolConsumer(object):
             A string
 
         key (optional)
-            A string, defaults to a string generated with
+            A text string, defaults to a string generated with
             :func:`~pyslet.wsgi.generate_key`
 
         secret (optional)
-            A string, defaults to a string generated with
+            A text string, defaults to a string generated with
             :func:`~pyslet.wsgi.generate_key`
 
         The fields of the entity are set from the passed in parameters
@@ -399,10 +408,10 @@ class ToolConsumer(object):
             secret = wsgi.generate_key()
         if key is None:
             key = wsgi.generate_key()
-        entity['ID'].set_from_value(wsgi.key60(key))
+        entity['ID'].set_from_value(wsgi.key60(key.encode('utf-8')))
         entity['Handle'].set_from_value(handle)
         entity['Key'].set_from_value(key)
-        entity['Secret'].set_from_value(cipher.encrypt(secret))
+        entity['Secret'].set_from_value(cipher.encrypt(secret.encode('utf-8')))
         return cls(entity, cipher)
 
     def update_from_values(self, handle, secret):
@@ -432,13 +441,14 @@ class ToolConsumer(object):
             A string received as a nonce during an LTI launch.
 
         This method hashes the nonce, along with the consumer entity's
-        *ID*, to return a hex digest string that can be used as a key
+        *Key*, to return a hex digest string that can be used as a key
         for comparing against the nonces used in previous launches.
 
-        Mixing the consumer entity's *ID* into the hash reduces the
+        Mixing the consumer entity's *Key* into the hash reduces the
         chance of a collision between two nonces from separate
         consumers."""
-        return sha256(str(self.entity['ID'].value) + nonce).hexdigest()
+        return sha256(
+            (self.entity['Key'].value + nonce).encode('utf-8')).hexdigest()
 
     def get_context(self, context_id, title=None, label=None, ctypes=None):
         """Returns a context entity
@@ -464,7 +474,8 @@ class ToolConsumer(object):
         information (if supplied) is compared and updated as
         necessary."""
         with self.entity['Contexts'].open() as collection:
-            key = wsgi.key60(self.entity['Key'].value + context_id)
+            key = wsgi.key60(
+                (self.entity['Key'].value + context_id).encode('utf-8'))
             try:
                 context = collection[key]
                 update = False
@@ -476,7 +487,7 @@ class ToolConsumer(object):
                     update = True
                 if ctypes:
                     ctypes.sort()
-                    ctypes = string.join(map(str, ctypes), ' ')
+                    ctypes = ' '.join([str(x) for x in ctypes])
                     if context['Types'].value != ctypes:
                         context['Types'].set_from_value(ctypes)
                         update = True
@@ -491,9 +502,8 @@ class ToolConsumer(object):
                 context['Label'].set_from_value(label)
                 if ctypes:
                     ctypes.sort()
-                    ctypes = string.join(map(str, ctypes), ' ')
-                    context['Types'].set_from_value(
-                        string.join(map(str, ctypes), ' '))
+                    ctypes = ' '.join([str(x) for x in ctypes])
+                    context['Types'].set_from_value(ctypes)
                 collection.insert_entity(context)
         return context
 
@@ -667,7 +677,7 @@ class ToolProvider(oauth.RequestValidator, MigratedClass):
     def validate_timestamp_and_nonce(self, client_key, timestamp, nonce,
                                      request, request_token=None,
                                      access_token=None):
-        key = sha256(str(wsgi.key60(client_key)) + nonce).hexdigest()
+        key = sha256((client_key + nonce).encode('utf-8')).hexdigest()
         with self.nonces.open() as collection:
             now = time.time()
             try:
@@ -688,10 +698,11 @@ class ToolProvider(oauth.RequestValidator, MigratedClass):
                 collection.insert_entity(e)
                 return True
 
-    dummy_client = u'dummy_'\
-        '6c877d7e0a8d52d3ea51155c0ce5bd75ceaf7bdd1d2041f9fb3703a207278ab9'
+    dummy_client = ul(
+        'dummy_'
+        '6c877d7e0a8d52d3ea51155c0ce5bd75ceaf7bdd1d2041f9fb3703a207278ab9')
 
-    dummy_secret = u'secret'
+    dummy_secret = ul('secret')
 
     def get_client_secret(self, client_key, request):
         try:
@@ -706,7 +717,8 @@ class ToolProvider(oauth.RequestValidator, MigratedClass):
         Returns a :class:`ToolConsumer` instance or raises a KeyError if
         key is not the key of any known consumer."""
         with self.consumers.open() as collection:
-            return ToolConsumer(collection[wsgi.key60(key)], self.cipher)
+            return ToolConsumer(collection[wsgi.key60(force_bytes(key))],
+                                self.cipher)
 
     @old_method('Launch')
     def launch(self, command, url, headers, body_string):
@@ -742,9 +754,9 @@ class ToolProvider(oauth.RequestValidator, MigratedClass):
             if not result:
                 raise LTIAuthenticationError
             # grab the parameters as a dictionary from body_string
-            parameters = urlparse.parse_qs(body_string)
-            for n, v in parameters.items():
-                parameters[n] = string.join(v, ',')
+            parameters = parse_qs(body_string)
+            for n, v in dict_items(parameters):
+                parameters[n] = ','.join(v)
             # the consumer key is in the oauth_consumer_key param
             consumer = self.lookup_consumer(parameters['oauth_consumer_key'])
             message_type = parameters.get('lti_message_type', '')
@@ -762,8 +774,9 @@ class ToolProvider(oauth.RequestValidator, MigratedClass):
 
 class ToolProviderContext(wsgi.SessionContext):
 
-    def __init__(self, environ, start_response):
-        wsgi.SessionContext.__init__(self, environ, start_response)
+    def __init__(self, environ, start_response, canonical_root=None):
+        wsgi.SessionContext.__init__(self, environ, start_response,
+                                     canonical_root)
         #: a :class:`~pyslet.imsbltiv1p0.ToolConsumer` instance
         #: identified from the launch
         self.consumer = None
@@ -779,68 +792,6 @@ class ToolProviderContext(wsgi.SessionContext):
         self.group = None
         #: the effective permissions (an integer for bitwise testing)
         self.permissions = 0
-
-
-class ToolProviderSession(wsgi.Session):
-
-    def add_visit(self, consumer, visit):
-        """Adds a visit entity to this session
-
-        This method creates a link from the current session entity
-        to the visit entity.  If the session entity already exists
-        then the existing collection of linked visits is examined.
-
-        If a visit to the same resource is already associated with the
-        entity is replaced.  This ensures that information about the
-        resource, the user, roles and permissions always corresponds to
-        the most recent launch.
-
-        Any visits from the same consumer but with a different user are
-        also removed.  This handles the case where a previous user of
-        the browser session needs to be logged out of the tool."""
-        resource = visit['Resource'].get_entity()
-        user = visit['User'].get_entity()
-        if self.entity.exists:
-            with self.entity['Visits'].open() as collection:
-                # we want to load the Resource, Resource/Consumer and User
-                collection.set_expand({'Resource': {'Consumer': None},
-                                       'User': None})
-                visits = collection.values()
-                # now compare these visits to the new one
-                for old_visit in visits:
-                    # if the old visit is to the same resource, replace it
-                    old_resource = old_visit['Resource'].get_entity()
-                    if old_resource.key() == resource.key():
-                        # drop this visit from this session
-                        del collection[old_visit.key()]
-                        continue
-                    # if the old visit is to the same consumer but with a
-                    # different user, replace it
-                    old_consumer = old_resource['Consumer'].get_entity()
-                    if old_consumer.key() == consumer.entity.key():
-                        old_user = old_visit['User'].get_entity()
-                        if user != old_user:
-                            # drop this visit too
-                            del collection[old_visit.key()]
-        # add this visit to this collection, linking it to the
-        # session
-        self.entity['Visits'].bind_entity(visit)
-        self.touch()
-
-    def find_visit(self, resource_id):
-        """Finds a visit that matches this resource_id"""
-        if not self.entity.exists:
-            self.commit()
-        with self.entity['Visits'].open() as collection:
-            # we want to load the Resource, Resource/Consumer and User
-            collection.set_expand({'Resource': {'Consumer': None},
-                                   'User': None})
-            visits = collection.values()
-            for visit in visits:
-                resource = visit['Resource'].get_entity()
-                if resource.key() == resource_id:
-                    return visit
-        return None
 
 
 class ToolProviderApp(wsgi.SessionApp):
@@ -863,9 +814,6 @@ class ToolProviderApp(wsgi.SessionApp):
 
     #: We have our own context class
     ContextClass = ToolProviderContext
-
-    #: We have our own LTI-specific Session class
-    SessionClass = ToolProviderSession
 
     @classmethod
     def add_options(cls, parser):
@@ -931,8 +879,7 @@ class ToolProviderApp(wsgi.SessionApp):
         if not group_id:
             # optional parameter, but recommended
             return None
-        group_types = string.split(context.parameters.get('context_type', ''),
-                                   ',')
+        group_types = context.parameters.get('context_type', '').split(',')
         gtypes = []
         for group_type in group_types:
             stype = group_type.strip()
@@ -979,9 +926,9 @@ class ToolProviderApp(wsgi.SessionApp):
 
     def set_launch_permissions(self, context):
         """Sets the permissions in the context from the launch params"""
-        permissions = 0L
+        permissions = long2(0)
         if 'roles' in context.parameters:
-            roles = string.split(context.parameters['roles'], ',')
+            roles = context.parameters['roles'].split(',')
             for role in roles:
                 srole = role.strip()
                 role_uri = URI.from_octets(srole)
@@ -1065,13 +1012,56 @@ class ToolProviderApp(wsgi.SessionApp):
     def new_visit(self, context):
         """Called during launch to create a new visit entity
 
-        The visit entity is bound to the resource entity referred to in
-        the launch and stores the permissions and a link to the
-        (optional) user entity."""
-        with context.resource.entity_set.get_target(
-                'Visits').open() as collection:
+        A new visit entity is created and bound to the resource entity
+        referred to in the launch.  The visit entity stores the
+        permissions and a link to the (optional) user entity.
+
+        If a visit to the same resource is already associated with the
+        session it is replaced.  This ensures that information about the
+        resource, the user, roles and permissions always corresponds to
+        the most recent launch.
+
+        Any visits from the same consumer but with a different user are
+        also removed.  This handles the case where a previous user of
+        the browser session needs to be logged out of the tool."""
+        with self.container['Visits'].open() as collection:
+            collection.set_expand(
+                {'Resource': {'Consumer': None}, 'User': None})
+            sid = edm.EDMValue.from_type(edm.SimpleType.String)
+            sid.set_from_value(context.session.sid)
+            filter = odata.CommonExpression.from_str(
+                "Session eq :sid", {'sid': sid})
+            collection.set_filter(filter)
+            visits = collection.values()
+            # now compare these visits to the new one
+            for old_visit in visits:
+                # if the old visit is to the same resource, replace it
+                old_resource = old_visit['Resource'].get_entity()
+                if old_resource.key() == context.resource.key():
+                    # drop this visit
+                    old_visit['Session'].set_from_value(None)
+                    old_visit.expand(None, {'Session': None})
+                    collection.update_entity(old_visit)
+                    continue
+                # if the old visit is to the same consumer but with a
+                # different user, replace it
+                old_consumer = old_resource['Consumer'].get_entity()
+                if old_consumer.key() == context.consumer.entity.key():
+                    old_user = old_visit['User'].get_entity()
+                    # one or the other may be None, will compare by key
+                    if context.user != old_user:
+                        # drop this visit too
+                        old_visit['Session'].set_from_value(None)
+                        old_visit.expand(None, {'Session': None})
+                        collection.update_entity(old_visit)
+            collection.set_expand(None)
+            collection.set_filter(None)
             visit = collection.new_entity()
             visit['Permissions'].set_from_value(context.permissions)
+            visit['Session'].set_from_value(context.session.sid)
+            visit['WhenLaunched'].set_from_value(iso.TimePoint.from_now_utc())
+            visit['UserAgent'].set_from_value(
+                context.environ.get('HTTP_USER_AGENT', ''))
             visit['Resource'].bind_entity(context.resource)
             user_value = []
             if context.user is not None:
@@ -1081,6 +1071,85 @@ class ToolProviderApp(wsgi.SessionApp):
             visit['Resource'].set_expansion_values([context.resource])
             visit['User'].set_expansion_values(user_value)
         context.visit = visit
+
+    def find_visit(self, context, resource_id):
+        """Finds a visit that matches this resource_id"""
+        with self.container['Visits'].open() as collection:
+            sid = edm.EDMValue.from_type(edm.SimpleType.String)
+            sid.set_from_value(context.session.sid)
+            filter = odata.CommonExpression.from_str(
+                "Session eq :sid", {'sid': sid})
+            collection.set_filter(filter)
+            # we want to load the Resource, Resource/Consumer and User
+            collection.set_expand({'Resource': {'Consumer': None},
+                                   'User': None})
+            visits = collection.values()
+            for visit in visits:
+                resource = visit['Resource'].get_entity()
+                if resource.key() == resource_id:
+                    return visit
+        return None
+
+    def establish_session(self, context):
+        """Overridden to update the Session ID in the visit"""
+        with self.container['Visits'].open() as collection:
+            sid = edm.EDMValue.from_type(edm.SimpleType.String)
+            sid.set_from_value(context.session.sid)
+            filter = odata.CommonExpression.from_str(
+                "Session eq :sid", {'sid': sid})
+            collection.set_filter(filter)
+            visits = collection.values()
+            context.session.establish()
+            # we don't expect more than one matching visit here
+            for visit in visits:
+                visit['Session'].set_from_value(context.session.sid)
+                # just update the Session field
+                visit.expand(None, {'Session': None})
+                collection.update_entity(visit)
+
+    def merge_session(self, context, merge_session):
+        """Overridden to update the Session ID in any associated visits"""
+        with self.container['Visits'].open() as collection:
+            sid = edm.EDMValue.from_type(edm.SimpleType.String)
+            sid.set_from_value(merge_session.session.sid)
+            filter = odata.CommonExpression.from_str(
+                "Session eq :sid", {'sid': sid})
+            collection.set_filter(filter)
+            collection.set_expand(
+                {'Resource': {'Consumer': None}, 'User': None})
+            merge_visits = collection.values()
+            # there should be only one visit in this session if there
+            # are more then something strange is going on
+            sid.set_from_value(context.session.sid)
+            for merge_visit in merge_visits:
+                merge_resource = merge_visit['Resource'].get_entity()
+                merge_consumer = merge_resource['Consumer'].get_entity()
+                merge_user = merge_visit['User'].get_entity()
+                old_visits = collection.values()
+                for old_visit in old_visits:
+                    # if the old visit is to the same resource, replace it
+                    old_resource = old_visit['Resource'].get_entity()
+                    if old_resource.key() == merge_resource.key():
+                        # drop this visit's session
+                        old_visit['Session'].set_from_value(None)
+                        old_visit.expand(None, {'Session': None})
+                        collection.update_entity(old_visit)
+                        continue
+                    # if the old visit is to the same consumer but with a
+                    # different user, replace it
+                    old_consumer = old_resource['Consumer'].get_entity()
+                    if old_consumer.key() == merge_consumer.key():
+                        old_user = old_visit['User'].get_entity()
+                        # one or the other may be None, will compare by key
+                        if old_user != merge_user:
+                            # drop this visit too
+                            old_visit['Session'].set_from_value(None)
+                            old_visit.expand(None, {'Session': None})
+                            collection.update_entity(old_visit)
+                merge_visit['Session'].set_from_value(context.session.sid)
+                # just update the Session field
+                merge_visit.set_expand(None, {'Session': None})
+                collection.update_entity(merge_visit)
 
     def load_visit(self, context):
         """Loads an existing LTI visit into the context
@@ -1128,7 +1197,7 @@ class ToolProviderApp(wsgi.SessionApp):
                 resource_id = int(resource_id, 16)
             except ValueError:
                 raise wsgi.PageNotFound
-            context.visit = context.session.find_visit(resource_id)
+            context.visit = self.find_visit(context, resource_id)
             if context.visit is None:
                 raise wsgi.PageNotAuthorized
             context.permissions = context.visit['Permissions'].value
@@ -1153,11 +1222,10 @@ class ToolProviderApp(wsgi.SessionApp):
             self.set_launch_resource(context)
             self.set_launch_user(context)
             self.set_launch_permissions(context)
-            self.new_visit(context)
-            # load the session information into the context and add the
-            # visit to this session.
+            # load the session information into the context and add a
+            # new visit to it.
             self.set_session(context)
-            context.session.add_visit(context.consumer, context.visit)
+            self.new_visit(context)
         except LTIProtocolError:
             logging.exception("LTI Protocol Error")
             return self.error_page(context, 400)
@@ -1260,7 +1328,7 @@ class BLTIToolProvider(ToolProvider):
         cipher = wsgi.AppCipher(0, 'secret', self.container['AppKeys'])
         with self.container['Silos'].open() as collection:
             self.silo = collection.new_entity()
-            self.silo['ID'].set_from_value(wsgi.key60('BLTIToolProvider'))
+            self.silo['ID'].set_from_value(wsgi.key60(b'BLTIToolProvider'))
             self.silo['Slug'].set_from_value('BLTIToolProvider')
             collection.insert_entity(self.silo)
         ToolProvider.__init__(self, self.container['Consumers'],
@@ -1284,17 +1352,17 @@ class BLTIToolProvider(ToolProvider):
         nfours = (key_length + 1) // 16
         try:
             rbytes = os.urandom(nfours * 2)
-            for i in xrange(nfours):
+            for i in range3(nfours):
                 four = "%02X%02X" % (
-                    ord(rbytes[2 * i]), ord(rbytes[2 * i + 1]))
+                    byte_value(rbytes[2 * i]), byte_value(rbytes[2 * i + 1]))
                 key.append(four)
         except NotImplementedError:
-            for i in xrange(nfours):
+            for i in range3(nfours):
                 four = []
-                for j in xrange(4):
+                for j in range3(4):
                     four.append(random.choice('0123456789ABCDEFG'))
-                key.append(string.join(four, ''))
-        return string.join(key, '.')
+                key.append(''.join(four))
+        return '.'.join(key)
 
     @old_method('NewConsumer')
     def new_consumer(self, key=None, secret=None):
@@ -1338,11 +1406,13 @@ class BLTIToolProvider(ToolProvider):
                 continue
             fields = line.split()
             if len(fields) >= 2:
+                key = fields[0].decode('utf-8')
+                secret = fields[1].decode('utf-8')
                 try:
-                    self.lookup_consumer(fields[0])
-                    raise BLTIDuplicateKeyError(fields[0])
+                    self.lookup_consumer(key)
+                    raise BLTIDuplicateKeyError(key)
                 except KeyError:
-                    self.new_consumer(fields[0], fields[1])
+                    self.new_consumer(key, secret)
 
     @old_method('SaveToFile')
     def save_to_file(self, f):
@@ -1357,7 +1427,6 @@ class BLTIToolProvider(ToolProvider):
             for c in collection.itervalues():
                 consumer = ToolConsumer(c, self.cipher)
                 consumers[consumer.key] = consumer.secret
-            keys = consumers.keys()
-            keys.sort()
+            keys = sorted(dict_keys(consumers))
             for key in keys:
-                f.write("%s %s\n" % (key, consumers[key]))
+                f.write(("%s %s\n" % (key, consumers[key])).encode('ascii'))

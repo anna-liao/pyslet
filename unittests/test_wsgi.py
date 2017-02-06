@@ -1,29 +1,37 @@
 #! /usr/bin/env python
 
 import cgi
+import io
 import json
 import logging
 import optparse
 import os.path
 import random
 import shutil
-import string
-import StringIO
 import tempfile
 import threading
 import time
 import unittest
-import urllib
 
-import pyslet.iso8601 as iso
-import pyslet.http.client as http
-import pyslet.http.cookie as cookie
-import pyslet.http.params as params
-import pyslet.html401 as html
-import pyslet.odata2.metadata as edmx
-import pyslet.odata2.sqlds as sql
-import pyslet.wsgi as wsgi
-
+from pyslet import html401 as html
+from pyslet import iso8601 as iso
+from pyslet import wsgi
+from pyslet.http import (
+    client as http,
+    cookie,
+    params)
+from pyslet.odata2 import (
+    metadata as edmx,
+    sqlds as sql)
+from pyslet.py2 import (
+    dict_items,
+    is_ascii,
+    is_text,
+    long2,
+    range3,
+    ul,
+    urlencode
+    )
 from pyslet.rfc2396 import URI, FileURL
 
 
@@ -36,7 +44,7 @@ def suite(prefix='test'):
         loader.loadTestsFromTestCase(AppTests),
         loader.loadTestsFromTestCase(WSGIDataAppTests),
         loader.loadTestsFromTestCase(AppCipherTests),
-        loader.loadTestsFromTestCase(SessionTests),
+        loader.loadTestsFromTestCase(CookieSessionTests),
         loader.loadTestsFromTestCase(FullAppTests),
     ))
 
@@ -54,11 +62,11 @@ SETTINGS_FILE = os.path.join(
 class MockRequest(object):
 
     def __init__(self, method='GET', path='/', query='', host='localhost',
-                 port=80, secure=False, ip='127.0.0.1', body='',
+                 port=80, secure=False, ip='127.0.0.1', body=b'',
                  body_type=None):
-        self.input = StringIO.StringIO(body)
-        self.output = StringIO.StringIO()
-        self.errors = StringIO.StringIO()
+        self.input = io.BytesIO(body)
+        self.output = io.BytesIO()
+        self.errors = io.BytesIO()
         self.environ = {
             'REQUEST_METHOD': method,
             'SCRIPT_NAME': '',
@@ -83,12 +91,12 @@ class MockRequest(object):
         self.headers = None
 
     def add_cookies(self, clist):
-        self.environ['HTTP_COOKIE'] = string.join(
-            map(lambda x: "%s=%s" % (x.name, x.value), clist), "; ")
+        hvalue = b"; ".join([b"%s=%s" % (x.name, x.value) for x in clist])
+        self.environ['HTTP_COOKIE'] = hvalue.decode('iso-8859-1')
 
     def call_app(self, app):
         for data in app(self.environ, self.start_response):
-            if isinstance(data, str):
+            if isinstance(data, bytes):
                 self.output.write(data)
             else:
                 raise ValueError("Value output by app: %s", str(data))
@@ -126,7 +134,7 @@ class FunctionTests(unittest.TestCase):
         key = wsgi.generate_key()
         # by default the key has 128 bits, which equates to 8 quadruplets
         self.assertTrue(len(key.split('.')) == 8)
-        crushed_key = string.join(key.split('.'), '')
+        crushed_key = ''.join(key.split('.'))
         self.assertTrue(len(crushed_key) == 32)
         for c in crushed_key:
             self.assertTrue(c in "0123456789ABCDEF")
@@ -136,12 +144,12 @@ class FunctionTests(unittest.TestCase):
         # and we can generate shorter keys
         key = wsgi.generate_key(32)
         self.assertTrue(len(key.split('.')) == 2)
-        crushed_key = string.join(key.split('.'), '')
+        crushed_key = ''.join(key.split('.'))
         self.assertTrue(len(crushed_key) == 8)
         # but we always round up to quadruplets
         key = wsgi.generate_key(33)
         self.assertTrue(len(key.split('.')) == 3, key)
-        crushed_key = string.join(key.split('.'), '')
+        crushed_key = ''.join(key.split('.'))
         self.assertTrue(len(crushed_key) == 12)
         # degenerate behaviour
         try:
@@ -159,15 +167,15 @@ class FunctionTests(unittest.TestCase):
     def test_key60(self):
         # no duplicates, but must be predictable
         results = {}
-        for i in xrange(1000):
+        for i in range3(1000):
             # re-use the generate_key function to create random keys
-            key = wsgi.generate_key()
+            key = wsgi.generate_key().encode('ascii')
             int_key = wsgi.key60(key)
             self.assertFalse(key in results, "generate_key is suspect")
             self.assertTrue(int_key >= 0, "negative key60")
-            self.assertTrue(isinstance(int_key, long))
+            self.assertTrue(isinstance(int_key, long2))
             results[key] = int_key
-        for key, int_key in results.items():
+        for key, int_key in dict_items(results):
             # must be repeatable!
             self.assertTrue(wsgi.key60(key) == int_key)
 
@@ -218,10 +226,10 @@ class ContextTests(unittest.TestCase):
         context.add_header('X-Test', 'value String')
         write_call = context.start_response()
         self.assertTrue(write_call is not None)
-        write_call("Hello")
+        write_call(b"Hello")
         self.assertTrue(len(req.headers) == 1)
         self.assertTrue(req.headers['x-test'] == ['value String'])
-        self.assertTrue(req.output.getvalue() == "Hello")
+        self.assertTrue(req.output.getvalue() == b"Hello")
 
     def test_app_root(self):
         req = MockRequest()
@@ -239,10 +247,11 @@ class ContextTests(unittest.TestCase):
         self.assertTrue(str(root) == 'http://localhost/')
         req = MockRequest()
         req.environ['HTTP_HOST'] = "www.evil.com"
-        context = wsgi.WSGIContext(req.environ, req.start_response)
-        root = context.get_app_root("https://www.good.com:8443")
+        # canonical_root passed as a parameter always takes precedence
+        context = wsgi.WSGIContext(req.environ, req.start_response,
+                                   canonical_root="https://www.good.com:8443")
+        root = context.get_app_root()
         self.assertTrue(isinstance(root, URI))
-        # authority passed as a parameter always takes precedence
         self.assertTrue(str(root) == 'https://www.good.com:8443/')
         # test https
         req = MockRequest(secure=True, port=443)
@@ -297,10 +306,11 @@ class ContextTests(unittest.TestCase):
         context = wsgi.WSGIContext(req.environ, req.start_response)
         url = context.get_url()
         self.assertTrue(str(url) == 'https://localhost:8443/')
-        # check that authority trumps the port
+        # check that canonical_root trumps the port
         req = MockRequest(port=8080)
-        context = wsgi.WSGIContext(req.environ, req.start_response)
-        url = context.get_url("http://www.example.com")
+        context = wsgi.WSGIContext(req.environ, req.start_response,
+                                   canonical_root="http://www.example.com")
+        url = context.get_url()
         self.assertTrue(str(url) == 'http://www.example.com/')
         # now check the path, with empty SCRIPT_NAME
         req = MockRequest(path="/script.py/index.html")
@@ -344,7 +354,7 @@ class ContextTests(unittest.TestCase):
         self.assertTrue(query is query2)
         # that that form parameters and cookies are ignored
         req = MockRequest(method="POST", path="/index.html",
-                          query="e=mc2&F=ma", body="g=9.8",
+                          query="e=mc2&F=ma", body=b"g=9.8",
                           body_type="application/x-www-form-urlencoded")
         req.environ['HTTP_COOKIE'] = "h=6.626e-34"
         context = wsgi.WSGIContext(req.environ, req.start_response)
@@ -358,37 +368,37 @@ class ContextTests(unittest.TestCase):
         context = wsgi.WSGIContext(req.environ, req.start_response)
         content = context.get_content()
         # but we still return an empty string for no content
-        self.assertTrue(isinstance(content, str))
+        self.assertTrue(isinstance(content, bytes))
         self.assertTrue(len(content) == 0)
-        req = MockRequest(body='')
+        req = MockRequest(body=b'')
         # CONTENT_LENGTH is 0 in this case
         context = wsgi.WSGIContext(req.environ, req.start_response)
         content = context.get_content()
-        self.assertTrue(isinstance(content, str))
+        self.assertTrue(isinstance(content, bytes))
         self.assertTrue(len(content) == 0)
-        req = MockRequest(body='0123456789ABCDEF')
+        req = MockRequest(body=b'0123456789ABCDEF')
         # CONTENT_LENGTH is 16 in this case
         context = wsgi.WSGIContext(req.environ, req.start_response)
         content = context.get_content()
-        self.assertTrue(content == "0123456789ABCDEF")
+        self.assertTrue(content == b"0123456789ABCDEF")
         # check that multiple calls return the same object
         content2 = context.get_content()
         self.assertTrue(content is content2)
         # check truncated read
-        req = MockRequest(body='0123456789ABCDEF')
+        req = MockRequest(body=b'0123456789ABCDEF')
         req.environ['CONTENT_LENGTH'] = "10"
         context = wsgi.WSGIContext(req.environ, req.start_response)
         content = context.get_content()
-        self.assertTrue(content == "0123456789")
+        self.assertTrue(content == b"0123456789")
         # check bad CONTENT_LENGTH, read's until EOF
-        req = MockRequest(body='0123456789')
+        req = MockRequest(body=b'0123456789')
         req.environ['CONTENT_LENGTH'] = "16"
         context = wsgi.WSGIContext(req.environ, req.start_response)
         content = context.get_content()
-        self.assertTrue(content == "0123456789")
+        self.assertTrue(content == b"0123456789")
         # check MAX_CONTENT, defaults to 64K
-        src = StringIO.StringIO()
-        b = "01"
+        src = io.BytesIO()
+        b = b"01"
         while src.tell() < 0x10000:
             src.write(b)
             b = src.getvalue()
@@ -400,7 +410,7 @@ class ContextTests(unittest.TestCase):
         except wsgi.BadRequest:
             self.fail("64K content always acceptable")
         # just one more 'wafer thin' byte...
-        src.write('0')
+        src.write(b'0')
         req = MockRequest(body=src.getvalue())
         context = wsgi.WSGIContext(req.environ, req.start_response)
         try:
@@ -408,7 +418,7 @@ class ContextTests(unittest.TestCase):
         except wsgi.BadRequest:
             pass
         # check that a preceding get_form call results in None
-        req = MockRequest(method="POST", body='e=mc2&F=ma',
+        req = MockRequest(method="POST", body=b'e=mc2&F=ma',
                           body_type="application/x-www-form-urlencoded")
         context = wsgi.WSGIContext(req.environ, req.start_response)
         context.get_form()
@@ -416,7 +426,7 @@ class ContextTests(unittest.TestCase):
         self.assertTrue(content is None)
 
     def test_form(self):
-        req = MockRequest(method="POST", body="e=mc2&F=ma",
+        req = MockRequest(method="POST", body=b"e=mc2&F=ma",
                           body_type="application/x-www-form-urlencoded")
         context = wsgi.WSGIContext(req.environ, req.start_response)
         form = context.get_form()
@@ -426,7 +436,7 @@ class ContextTests(unittest.TestCase):
         self.assertTrue(form['e'].value == "mc2")
         self.assertTrue(form['F'].value == "ma")
         # check multiple values
-        req = MockRequest(method="POST", body="e=mc2&e=2.718",
+        req = MockRequest(method="POST", body=b"e=mc2&e=2.718",
                           body_type="application/x-www-form-urlencoded")
         context = wsgi.WSGIContext(req.environ, req.start_response)
         form = context.get_form()
@@ -437,7 +447,7 @@ class ContextTests(unittest.TestCase):
         self.assertTrue(form is form2)
         # that that query parameters and cookies are ignored
         req = MockRequest(method="POST", path="/index.html",
-                          body="e=mc2&F=ma", query="g=9.8",
+                          body=b"e=mc2&F=ma", query="g=9.8",
                           body_type="application/x-www-form-urlencoded")
         req.environ['HTTP_COOKIE'] = "h=6.626e-34"
         context = wsgi.WSGIContext(req.environ, req.start_response)
@@ -446,7 +456,7 @@ class ContextTests(unittest.TestCase):
         self.assertFalse("g" in form)
         self.assertFalse("h" in form)
         # check that a preceding get_content call results in None
-        req = MockRequest(method="POST", body='e=mc2&F=ma',
+        req = MockRequest(method="POST", body=b'e=mc2&F=ma',
                           body_type="application/x-www-form-urlencoded")
         context = wsgi.WSGIContext(req.environ, req.start_response)
         context.get_content()
@@ -454,20 +464,20 @@ class ContextTests(unittest.TestCase):
         self.assertTrue(form is None)
 
     def test_form_string(self):
-        req = MockRequest(method="POST", body="e=mc2&F=ma",
+        req = MockRequest(method="POST", body=b"e=mc2&F=ma",
                           body_type="application/x-www-form-urlencoded")
         context = wsgi.WSGIContext(req.environ, req.start_response)
         self.assertTrue(context.get_form_string("e") == "mc2")
         self.assertTrue(context.get_form_string("F") == "ma")
         # check multiple values
-        req = MockRequest(method="POST", body="e=mc2&e=2.718",
+        req = MockRequest(method="POST", body=b"e=mc2&e=2.718",
                           body_type="application/x-www-form-urlencoded")
         context = wsgi.WSGIContext(req.environ, req.start_response)
         self.assertTrue(context.get_form_string("e") == "mc2,2.718")
         self.assertTrue(context.get_form_string("F") == '')
 
     def test_form_file(self):
-        body = """
+        body = b"""
 --AaB03x
 Content-Disposition: form-data; name="submit-name"
 
@@ -492,7 +502,7 @@ Content-Type: text/plain
         form = context.get_form()
         self.assertTrue(form['files'].file is not None)
         self.assertTrue(form['files'].file.read() ==
-                        "... contents of file1.txt ...")
+                        b"... contents of file1.txt ...")
 
     def test_cookies(self):
         req = MockRequest(path="/index.html")
@@ -501,29 +511,29 @@ Content-Type: text/plain
         cookies = context.get_cookies()
         self.assertTrue(isinstance(cookies, dict))
         self.assertTrue(len(cookies) == 2)
-        self.assertTrue("e" in cookies)
-        self.assertTrue("F" in cookies)
-        self.assertTrue(cookies['e'] == "mc2")
-        self.assertTrue(cookies['F'] == "ma")
+        self.assertTrue(b"e" in cookies)
+        self.assertTrue(b"F" in cookies)
+        self.assertTrue(cookies[b'e'] == b"mc2")
+        self.assertTrue(cookies[b'F'] == b"ma")
         # check multiple values
         req = MockRequest(path="/index.html")
         req.environ['HTTP_COOKIE'] = "e=mc2; e=2.718"
         context = wsgi.WSGIContext(req.environ, req.start_response)
         cookies = context.get_cookies()
         # multi-valued cookies are sorted and joined with comma
-        self.assertTrue(cookies['e'] == "2.718,mc2")
+        self.assertTrue(cookies[b'e'] == b"2.718,mc2")
         # check multiple calls return the same object
         cookies2 = context.get_cookies()
         self.assertTrue(cookies is cookies2)
         # that that form parameters and the query are ignored
         req = MockRequest(method="POST", path="/index.html",
-                          query="h=6.626e-34", body="g=9.8",
+                          query="h=6.626e-34", body=b"g=9.8",
                           body_type="application/x-www-form-urlencoded")
         req.environ['HTTP_COOKIE'] = "e=mc2; F=ma"
         context = wsgi.WSGIContext(req.environ, req.start_response)
         cookies = context.get_cookies()
         self.assertTrue(len(cookies) == 2, str(cookies))
-        self.assertTrue(cookies == {"e": "mc2", "F": "ma"})
+        self.assertTrue(cookies == {b"e": b"mc2", b"F": b"ma"})
 
 
 class MockLogging(object):
@@ -769,7 +779,7 @@ class AppTests(unittest.TestCase):
         self.assertTrue("WSGIApp" in SettingsApp.settings)
         self.assertTrue("level" in SettingsApp.settings['WSGIApp'])
         self.assertTrue(SettingsApp.settings['WSGIApp']['level'] is None)
-        self.assertTrue(SettingsApp.settings['WSGIApp']['authority'] ==
+        self.assertTrue(SettingsApp.settings['WSGIApp']['canonical_root'] ==
                         "http://localhost:8080")
         self.assertTrue(SettingsApp.settings['WSGIApp']['port'] == 8080)
         self.assertTrue(SettingsApp.settings['WSGIApp']['interactive'] is
@@ -783,7 +793,7 @@ class AppTests(unittest.TestCase):
         SettingsApp.settings_file = path
         SettingsApp.setup()
         self.assertTrue(SettingsApp.settings['WSGIApp']['level'] == 20)
-        self.assertTrue(SettingsApp.settings['WSGIApp']['authority'] ==
+        self.assertTrue(SettingsApp.settings['WSGIApp']['canonical_root'] ==
                         "https://www.example.com:8443")
         self.assertTrue(SettingsApp.settings['WSGIApp']['port'] == 8081)
         self.assertTrue(SettingsApp.settings['WSGIApp']['interactive'] is True)
@@ -824,19 +834,19 @@ class AppTests(unittest.TestCase):
 
             def method1(self, context):
                 context.set_status(200)
-                return ['test1']
+                return [b'test1']
 
             def method2(self, context):
                 context.set_status(200)
-                return ['test2']
+                return [b'test2']
 
             def method3(self, context):
                 context.set_status(200)
-                return ['test3']
+                return [b'test3']
 
             def method4(self, context):
                 context.set_status(200)
-                return ['test4']
+                return [b'test4']
         App.setup()
         app = App()
         app.set_method('/test/test', app.method1)
@@ -850,19 +860,19 @@ class AppTests(unittest.TestCase):
         # matches /test/*, even though there is no trailing slash!
         req = MockRequest(path="/test")
         req.call_app(app)
-        self.assertTrue(req.output.getvalue() == "test2")
+        self.assertTrue(req.output.getvalue() == b"test2")
         # matches /test/*, fallback wildcard
         req = MockRequest(path="/test/tset")
         req.call_app(app)
-        self.assertTrue(req.output.getvalue() == "test2")
+        self.assertTrue(req.output.getvalue() == b"test2")
         # matches /test/*, fallback wildcard
         req = MockRequest(path="/test/testA")
         req.call_app(app)
-        self.assertTrue(req.output.getvalue() == "test2")
+        self.assertTrue(req.output.getvalue() == b"test2")
         # matches /test/*, any path after wildcard
         req = MockRequest(path="/test/test/test")
         req.call_app(app)
-        self.assertTrue(req.output.getvalue() == "test2")
+        self.assertTrue(req.output.getvalue() == b"test2")
         # not mapped
         req = MockRequest(path="/testA")
         req.call_app(app)
@@ -870,11 +880,11 @@ class AppTests(unittest.TestCase):
         # matches /test/test, not the wildcard
         req = MockRequest(path="/test/test")
         req.call_app(app)
-        self.assertTrue(req.output.getvalue() == "test1")
+        self.assertTrue(req.output.getvalue() == b"test1")
         # matches /*/test
         req = MockRequest(path="/tset/test")
         req.call_app(app)
-        self.assertTrue(req.output.getvalue() == "test3")
+        self.assertTrue(req.output.getvalue() == b"test3")
 
     def test_wrapper(self):
         class App(wsgi.WSGIApp):
@@ -882,9 +892,9 @@ class AppTests(unittest.TestCase):
             def page(self, context):
                 context.set_status(200)
                 context.add_header('Content-Length', 10)
-                context.add_header('Content-Type', u'text/plain')
+                context.add_header('Content-Type', ul('text/plain'))
                 context.start_response()
-                return [u"0123456789"]
+                return [ul("0123456789")]
         # check that common errors are caught and absorbed
         App.setup()
         app = App()
@@ -892,9 +902,10 @@ class AppTests(unittest.TestCase):
         req = MockRequest(path="/index.htm")
         req.call_app(app.call_wrapper)
         self.assertTrue(req.headers['content-length'] == ['10'])
-        self.assertTrue(req.output.getvalue() == "0123456789")
+        self.assertTrue(req.output.getvalue() == b"0123456789")
 
     def test_static(self):
+        MockApp.setup()
         app = MockApp()
         app.set_method('/*', app.static_page)
         req = MockRequest(path="/res/public.txt")
@@ -905,7 +916,7 @@ class AppTests(unittest.TestCase):
         self.assertTrue(len(ctype) == 1)
         self.assertTrue(ctype[0] == "text/plain",
                         str(req.headers['content-type']))
-        self.assertTrue(req.output.getvalue().startswith("Hello mum!"))
+        self.assertTrue(req.output.getvalue().startswith(b"Hello mum!"))
         req = MockRequest(path="/res/private_file.txt")
         req.call_app(app)
         # we expect 404
@@ -948,7 +959,7 @@ class AppTests(unittest.TestCase):
         self.assertTrue(req.status.startswith('200 '), req.status)
         self.assertTrue(req.headers['content-length'] == [str(pub_len)])
         self.assertTrue('last-modified' in req.headers)
-        self.assertTrue(req.output.getvalue().strip() == 'Hello mum!')
+        self.assertTrue(req.output.getvalue().strip() == b'Hello mum!')
         # check that we can still control the status
         req = MockRequest(path="/missing")
         req.call_app(app.call_wrapper)
@@ -959,11 +970,12 @@ class AppTests(unittest.TestCase):
 
             def str_page(self, context):
                 context.set_status(200)
-                return self.html_response(context, "<title>Caf\xe9</title>")
+                return self.html_response(context, b"<title>Caf\xe9</title>")
 
             def unicode_page(self, context):
                 context.set_status(404)
-                return self.html_response(context, u"<title>Caf\xe9</title>")
+                return self.html_response(context,
+                                          ul(b"<title>Caf\xe9</title>"))
         App.setup()
         app = App()
         app.set_method('/str.htm', app.str_page)
@@ -974,17 +986,17 @@ class AppTests(unittest.TestCase):
         self.assertTrue(req.headers['content-type'] == ['text/html'])
         self.assertTrue(req.headers['content-length'] == ['19'])
         self.assertFalse('last-modified' in req.headers)
-        self.assertTrue(req.output.getvalue() == "<title>Caf\xe9</title>")
+        self.assertTrue(req.output.getvalue() == b"<title>Caf\xe9</title>")
         # unicode and status override check combined
         req = MockRequest(path="/unicode.htm")
         req.call_app(app.call_wrapper)
         self.assertTrue(req.status.startswith('404 '))
-        print repr(req.output.getvalue())
+        logging.debug(repr(req.output.getvalue()))
         self.assertTrue(req.headers['content-type'] ==
                         ['text/html; charset=utf-8'])
         # check it really is UTF-8
         self.assertTrue(req.output.getvalue() ==
-                        '<title>Caf\xc3\xa9</title>')
+                        b'<title>Caf\xc3\xa9</title>')
 
     def test_json_response(self):
         class App(wsgi.WSGIApp):
@@ -992,17 +1004,17 @@ class AppTests(unittest.TestCase):
             def good_page(self, context):
                 context.set_status(200)
                 return self.json_response(
-                    context, json.dumps(u"Caf\xe9", ensure_ascii=False))
+                    context, json.dumps(ul(b"Caf\xe9"), ensure_ascii=False))
 
             def bad_page(self, context):
                 context.set_status(404)
                 return self.json_response(
-                    context, json.dumps(u"Caf\xe9", ensure_ascii=True))
+                    context, json.dumps(ul(b"Caf\xe9"), ensure_ascii=True))
 
             def ugly_page(self, context):
                 context.set_status(500)
                 return self.json_response(
-                    context, json.dumps(u"Caf\xe9",
+                    context, json.dumps(ul(b"Caf\xe9"),
                                         ensure_ascii=False).encode('utf-8'))
         App.setup()
         app = App()
@@ -1017,7 +1029,7 @@ class AppTests(unittest.TestCase):
         self.assertFalse('last-modified' in req.headers)
         output = req.output.getvalue().decode('utf-8')
         # unicode characters encoded by UTF-8 only
-        self.assertTrue(output == u'"Caf\xe9"')
+        self.assertTrue(output == ul(b'"Caf\xe9"'))
         req = MockRequest(path="/bad.json")
         req.call_app(app.call_wrapper)
         self.assertTrue(req.status.startswith('404 '))
@@ -1025,7 +1037,7 @@ class AppTests(unittest.TestCase):
         self.assertTrue(req.headers['content-length'] == ['11'])
         output = req.output.getvalue().decode('utf-8')
         # unicode characters encoded in the JSON itself
-        self.assertTrue(output == u'"Caf\\u00e9"')
+        self.assertTrue(output == ul(b'"Caf\\u00e9"'))
         req = MockRequest(path="/ugly.json")
         req.call_app(app.call_wrapper)
         self.assertTrue(req.status.startswith('500 '))
@@ -1033,22 +1045,23 @@ class AppTests(unittest.TestCase):
         self.assertTrue(req.headers['content-length'] == ['7'])
         output = req.output.getvalue().decode('utf-8')
         # unicode characters encoded before being passed
-        self.assertTrue(output == u'"Caf\xe9"')
+        self.assertTrue(output == ul(b'"Caf\xe9"'))
 
     def test_text_response(self):
         class App(wsgi.WSGIApp):
 
             def str_page(self, context):
                 context.set_status(200)
-                return self.text_response(context, "Cafe")
+                return self.text_response(context, b"Cafe")
 
             def unicode_page(self, context):
                 context.set_status(404)
-                return self.text_response(context, u"Caf\xe9")
+                return self.text_response(context, ul(b"Caf\xe9"))
 
             def bad_page(self, context):
                 context.set_status(500)
-                return self.text_response(context, u"Caf\xe9".encode('utf-8'))
+                return self.text_response(context,
+                                          ul(b"Caf\xe9").encode('utf-8'))
         App.setup()
         app = App()
         app.set_method('/str.txt', app.str_page)
@@ -1060,24 +1073,24 @@ class AppTests(unittest.TestCase):
         self.assertTrue(req.headers['content-type'] == ['text/plain'])
         self.assertTrue(req.headers['content-length'] == ['4'])
         self.assertFalse('last-modified' in req.headers)
-        self.assertTrue(req.output.getvalue() == "Cafe")
+        self.assertTrue(req.output.getvalue() == b"Cafe")
         # unicode and status override check combined
         req = MockRequest(path="/unicode.txt")
         req.call_app(app.call_wrapper)
         self.assertTrue(req.status.startswith('404 '))
-        print repr(req.output.getvalue())
+        logging.debug(repr(req.output.getvalue()))
         self.assertTrue(req.headers['content-type'] ==
                         ['text/plain; charset=utf-8'])
         # check it really is UTF-8
-        self.assertTrue(req.output.getvalue() == 'Caf\xc3\xa9')
+        self.assertTrue(req.output.getvalue() == b'Caf\xc3\xa9')
         # non-ASCII data in output is not checked (for speed)
         req = MockRequest(path="/bad.txt")
         req.call_app(app.call_wrapper)
         self.assertTrue(req.status.startswith('500 '))
-        print repr(req.output.getvalue())
+        logging.debug(repr(req.output.getvalue()))
         self.assertTrue(req.headers['content-type'] == ['text/plain'])
         # check it was output as unchecked UTF-8
-        self.assertTrue(req.output.getvalue() == 'Caf\xc3\xa9')
+        self.assertTrue(req.output.getvalue() == b'Caf\xc3\xa9')
 
     def test_redirect_page(self):
         class App(wsgi.WSGIApp):
@@ -1132,7 +1145,7 @@ class AppTests(unittest.TestCase):
                     context, 404, "Gone for good")
 
             def error(self, context):
-                return self.error_page(context, msg=u"Gone to the Caf\xe9")
+                return self.error_page(context, msg=ul(b"Gone to the Caf\xe9"))
 
             def whoops(self, context):
                 return self.error_page(context)
@@ -1144,22 +1157,23 @@ class AppTests(unittest.TestCase):
         req = MockRequest(path="/missing")
         req.call_app(app.call_wrapper)
         self.assertTrue(req.status.startswith('404 '))
-        self.assertTrue(req.headers['content-type'] == ['text/plain'])
-        self.assertTrue(req.output.getvalue() == "Gone for good")
+        self.assertTrue(req.headers['content-type'] == ['text/plain'],
+                        req.headers)
+        self.assertTrue(req.output.getvalue() == b"Gone for good")
         # URI parameter check
         req = MockRequest(path="/error")
         req.call_app(app.call_wrapper)
         self.assertTrue(req.status.startswith('500 '))
         self.assertTrue(req.headers['content-type'] ==
                         ['text/plain; charset=utf-8'])
-        self.assertTrue(req.output.getvalue() == 'Gone to the Caf\xc3\xa9')
+        self.assertTrue(req.output.getvalue() == b'Gone to the Caf\xc3\xa9')
         # Check error raising
         req = MockRequest(path="/whoops")
         req.call_app(app.call_wrapper)
         self.assertTrue(req.status.startswith('500 '))
         self.assertTrue(req.headers['content-type'] == ['text/plain'])
-        print repr(req.output.getvalue())
-        self.assertTrue(req.output.getvalue() == '500 Internal Server Error')
+        logging.debug(repr(req.output.getvalue()))
+        self.assertTrue(req.output.getvalue() == b'500 Internal Server Error')
 
     def test_catch(self):
         class App(wsgi.WSGIApp):
@@ -1175,9 +1189,9 @@ class AppTests(unittest.TestCase):
         req.call_app(app.call_wrapper)
         self.assertTrue(req.status.startswith('500 '))
         self.assertTrue(req.headers['content-type'] == ['text/plain'])
-        print repr(req.output.getvalue())
+        logging.debug(repr(req.output.getvalue()))
         self.assertTrue(req.output.getvalue() ==
-                        '500 Internal Server Error\r\nWhoops!')
+                        b'500 Internal Server Error\r\nWhoops!')
 
     def test_run_server(self):
         class App(wsgi.WSGIApp):
@@ -1197,22 +1211,24 @@ class AppTests(unittest.TestCase):
         port = random.randint(1111, 9999)
         app.settings['WSGIApp']['port'] = port
         t = threading.Thread(target=app.run_server)
-        t.start()
-        client = http.Client()
-        request = http.ClientRequest("http://localhost:%i/start" % port)
-        client.process_request(request)
-        self.assertTrue(request.response.status == 200)
-        self.assertTrue(request.res_body == "Start")
-        # stop the server
-        request = http.ClientRequest("http://localhost:%i/stop" % port)
-        client.process_request(request)
-        # joint the run_server thread, should terminate
-        t.join()
+        try:
+            t.start()
+            client = http.Client()
+            request = http.ClientRequest("http://localhost:%i/start" % port)
+            client.process_request(request)
+            self.assertTrue(request.response.status == 200)
+            self.assertTrue(request.res_body == b"Start")
+        finally:
+            # stop the server
+            request = http.ClientRequest("http://localhost:%i/stop" % port)
+            client.process_request(request)
+            # joint the run_server thread, should terminate
+            t.join()
 
 
 class WSGIDataAppTests(unittest.TestCase):
 
-    DUMMY_SCHEMA = """<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+    DUMMY_SCHEMA = b"""<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
 <edmx:Edmx Version="1.0"
     xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx"
     xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata">
@@ -1304,7 +1320,7 @@ class WSGIDataAppTests(unittest.TestCase):
         self.assertTrue(options.create_tables is False)
         try:
             SApp.setup(options=options, args=args)
-            # print the suggested SQL database schema and then exit.
+            # log the suggested SQL database schema and then exit.
             self.fail("Expected system exit")
         except SystemExit:
             pass
@@ -1320,7 +1336,7 @@ class WSGIDataAppTests(unittest.TestCase):
         self.assertTrue(options.create_tables is True)
         try:
             SApp.setup(options=options, args=args)
-            # print the suggested SQL database schema and then exit.
+            # logthe suggested SQL database schema and then exit.
             # The setting of --create_tables is ignored.
             self.fail("Expected system exit")
         except SystemExit:
@@ -1424,36 +1440,81 @@ class AppCipherTests(unittest.TestCase):
         self.dbcontainer.create_all_tables()
         self.key_set = self.container['AppKeys']
 
-    def test_constructor(self):
-        ac = wsgi.AppCipher(0, 'password', self.key_set)
+    def test_plaintext(self):
+        ac = wsgi.AppCipher(0, b'password', self.key_set)
         # we don't create an records initially
         with self.key_set.open() as collection:
             self.assertTrue(len(collection) == 0)
-        data0 = ac.encrypt("Hello")
+        data0 = ac.encrypt(b"Hello")
+        self.assertTrue(is_ascii(data0))
         self.assertFalse(data0 == "Hello")
-        self.assertTrue(ac.decrypt(data0) == "Hello")
-        ac.change_key(1, "pa$$word",
+        self.assertTrue(ac.decrypt(data0) == b"Hello")
+        # check signing
+        msg = b"Hello Caf\xc3\xa9"
+        sdata0 = ac.sign(msg)
+        self.assertTrue(is_ascii(sdata0))
+        try:
+            self.assertTrue(ac.check_signature(sdata0, msg) == msg)
+        except ValueError:
+            self.fail("Failed to validate signed message")
+        sdata0 = ac.ascii_sign(msg)
+        pos = sdata0.find("Hello%20Caf%C3%A9")
+        self.assertTrue(pos >= 0, "signed msg not visible")
+        try:
+            self.assertTrue(ac.check_signature(sdata0) == msg)
+        except ValueError:
+            self.fail("Failed to validate ascii signed message")
+        # now try with the message
+        try:
+            self.assertTrue(ac.check_signature(sdata0, msg) == msg)
+        except ValueError:
+            self.fail("Failed to validate ascii signed message")
+        # and now try with mismatched message
+        try:
+            ac.check_signature(sdata0, b"Hello")
+            self.fail("Validated mismatched messages")
+        except ValueError:
+            pass
+        # now corrupt the message by lower-casing the 'H'
+        tampered = sdata0[:pos] + "h" + sdata0[pos + 1:]
+        try:
+            ac.check_signature(tampered)
+            self.fail("Validated tampered message")
+        except ValueError:
+            pass
+        try:
+            ac.check_signature(tampered, msg)
+            self.fail("Validated tampered message")
+        except ValueError:
+            pass
+        # now change the key
+        ac.change_key(1, b"pa$$word",
                       iso.TimePoint.from_unix_time(time.time() - 1))
         with self.key_set.open() as collection:
             self.assertTrue(len(collection) == 1)
-        data1 = ac.encrypt("Hello")
+        data1 = ac.encrypt(b"Hello")
         self.assertFalse(data0 == data1)
-        self.assertTrue(ac.decrypt(data1) == "Hello")
-        self.assertTrue(ac.decrypt(data0) == "Hello")
-        ac.change_key(2, "unguessable",
+        self.assertTrue(ac.decrypt(data1) == b"Hello")
+        self.assertTrue(ac.decrypt(data0) == b"Hello")
+        ac.change_key(2, b"unguessable",
                       iso.TimePoint.from_unix_time(time.time() - 1))
         with self.key_set.open() as collection:
             self.assertTrue(len(collection) == 2)
-        self.assertTrue(ac.decrypt(data0) == "Hello")
-        ac.change_key(10, "anotherkey",
+        self.assertTrue(ac.decrypt(data0) == b"Hello")
+        ac.change_key(10, b"anotherkey",
                       iso.TimePoint.from_unix_time(time.time() - 1))
         with self.key_set.open() as collection:
             self.assertTrue(len(collection) == 3)
-        self.assertTrue(ac.decrypt(data0) == "Hello")
-        ac2 = wsgi.AppCipher(10, "anotherkey", self.key_set)
-        self.assertTrue(ac2.decrypt(data0) == "Hello")
+        self.assertTrue(ac.decrypt(data0) == b"Hello")
+        ac2 = wsgi.AppCipher(10, b"anotherkey", self.key_set)
+        self.assertTrue(ac2.decrypt(data0) == b"Hello")
+        # check we can still validate older hashes
+        try:
+            self.assertTrue(ac.check_signature(sdata0) == msg)
+        except ValueError:
+            self.fail("Failed to validate ascii signed message")
 
-    def test_aes_constructor(self):
+    def test_aes(self):
         if not wsgi.got_crypto:
             logging.warn("Skipping AESAppCipher tests, PyCrypto not installed")
             return
@@ -1461,14 +1522,14 @@ class AppCipherTests(unittest.TestCase):
         # we don't create an records initially
         with self.key_set.open() as collection:
             self.assertTrue(len(collection) == 0)
-        data0 = ac.encrypt("Hello")
+        data0 = ac.encrypt(b"Hello")
         self.assertFalse(data0 == "Hello")
         self.assertTrue(ac.decrypt(data0) == "Hello")
         ac.change_key(1, "pa$$word",
                       iso.TimePoint.from_unix_time(time.time() - 1))
         with self.key_set.open() as collection:
             self.assertTrue(len(collection) == 1)
-        data1 = ac.encrypt("Hello")
+        data1 = ac.encrypt(b"Hello")
         self.assertFalse(data0 == data1)
         self.assertTrue(ac.decrypt(data1) == "Hello")
         self.assertTrue(ac.decrypt(data0) == "Hello")
@@ -1486,7 +1547,7 @@ class AppCipherTests(unittest.TestCase):
         self.assertTrue(ac2.decrypt(data0) == "Hello")
 
 
-class SessionTests(unittest.TestCase):
+class CookieSessionTests(unittest.TestCase):
 
     def setUp(self):        # noqa
 
@@ -1498,58 +1559,56 @@ class SessionTests(unittest.TestCase):
         TestSessionApp.setup(options=options, args=args)
         self.app = TestSessionApp()
 
-    def test_sid(self):
-        with self.app.container['Sessions'].open() as collection:
-            entity = collection.new_entity()
-            entity['UserKey'].set_from_value('Hello')
-            s = wsgi.Session(entity)
-            self.assertTrue(s.sid() == 'Hello')
-            entity['UserKey'].set_from_value("Goodbye")
-            self.assertTrue(s.sid() == "Goodbye")
+    def test_constructor(self):
+        s = wsgi.CookieSession()
+        # check basic fields
+        self.assertTrue(is_text(s.sid))
+        self.assertTrue(len(s.sid) >= 32, "expect 128 bits in hex")
+        self.assertFalse(s.established, "not established")
+        self.assertTrue(isinstance(s.last_seen, iso.TimePoint))
+        s2 = wsgi.CookieSession()
+        self.assertFalse(s.sid == s2.sid, "unique sid")
 
-    def test_match(self):
-        req = MockRequest()
-        context = wsgi.WSGIContext(req.environ, req.start_response)
-        # default context has no UserAgent
-        with self.app.container['Sessions'].open() as collection:
-            entity = collection.new_entity()
-            # no UserAgent in environ should match default (NULL)
-            s = wsgi.Session(entity)
-            self.assertTrue(s.match_environ(context))
-            # but an empty UserAgent should not match
-            entity['UserAgent'].set_from_value('')
-            s = wsgi.Session(entity)
-            context.environ['HTTP_USER_AGENT'] = 'Browser/1.0'
-            self.assertFalse(s.match_environ(context))
-            entity['UserAgent'].set_from_value('Browser/1.0')
-            self.assertTrue(s.match_environ(context))
+    def test_establish(self):
+        s = wsgi.CookieSession()
+        self.assertFalse(s.established)
+        old_id = s.sid
+        new_id = s.establish()
+        self.assertTrue(s.established)
+        self.assertFalse(s.sid == old_id)
+        self.assertTrue(s.sid == new_id)
+        try:
+            s.establish()
+            self.fail("establish for established session")
+        except ValueError:
+            pass
 
-    def test_delete(self):
-        with self.app.container['Sessions'].open() as collection:
-            entity = collection.new_entity()
-            entity.set_key(1)
-            entity['Established'].set_from_value(False)
-            entity['UserKey'].set_from_value('Hello')
-            entity['ServerKey'].set_from_value('Hello')
-            entity['FirstSeen'].set_from_value(time.time())
-            entity['LastSeen'].set_from_value(time.time())
-            entity['UserAgent'].set_from_value('Browser/1.0')
-            self.assertFalse(1 in collection)
-            collection.insert_entity(entity)
-            s = wsgi.Session(entity)
-            self.assertTrue(1 in collection)
-            self.assertTrue(entity.exists)
-            entity2 = collection.new_entity()
-            entity2.set_key(2)
-            entity2.merge(entity)
-            collection.insert_entity(entity2)
-            self.assertTrue(2 in collection)
-            s2 = wsgi.Session(entity2)
-            s.absorb(s2)
-            # should delete s2
-            self.assertFalse(2 in collection)
-            self.assertTrue(1 in collection)
-            self.assertFalse(entity2.exists)
+    def test_seen_now(self):
+        s = wsgi.CookieSession()
+        s.established = True
+        s.last_seen = iso.TimePoint.from_str("1986-11-22T08:45:00Z")
+        last_seen = s.last_seen
+        s.seen_now()
+        self.assertFalse(s.last_seen == last_seen)
+
+    def test_age(self):
+        now = iso.TimePoint.from_now_utc().get_unixtime()
+        s = wsgi.CookieSession()
+        # Unless our script is very slow, this should be recent
+        self.assertTrue(s.age() < 10)
+        # now make it older
+        s.last_seen = iso.TimePoint.from_unix_time(now - 20)
+        self.assertTrue(s.age() > 10)
+
+    def test_str(self):
+        s = wsgi.CookieSession()
+        s.established = True
+        s.last_seen = iso.TimePoint.from_str("1986-11-22T08:45:00Z")
+        sdata = str(s)
+        s2 = wsgi.CookieSession(sdata)
+        self.assertTrue(s.sid == s2.sid)
+        self.assertTrue(s2.established)
+        self.assertTrue(s.last_seen == s2.last_seen)
 
 
 class TestSessionApp(wsgi.SessionApp):
@@ -1589,8 +1648,8 @@ class FullAppTests(unittest.TestCase):
         target = req.headers['location']
         self.assertTrue(len(target) == 1)
         target = URI.from_octets(target[0])
-        self.assertTrue(target.get_addr() == ('localhost', 80))
-        self.assertTrue(isinstance(target, params.HTTPURL))
+        self.assertTrue(target.get_addr() == ('www.example.com', 8443))
+        self.assertTrue(isinstance(target, params.HTTPSURL))
         # and we expect a warning cookie
         self.assertTrue(self.app._test_cookie in req.cookies)
         # and we expect a session cookie
@@ -1607,8 +1666,8 @@ class FullAppTests(unittest.TestCase):
         target = req.headers['location']
         self.assertTrue(len(target) == 1)
         target = URI.from_octets(target[0])
-        self.assertTrue(target.get_addr() == ('localhost', 80))
-        self.assertTrue(isinstance(target, params.HTTPURL))
+        self.assertTrue(target.get_addr() == ('www.example.com', 8443))
+        self.assertTrue(isinstance(target, params.HTTPSURL))
         self.assertTrue(target.abs_path == '/')
         # and an updated sid!
         self.assertTrue(self.app._session_cookie in req.cookies)
@@ -1644,14 +1703,14 @@ class FullAppTests(unittest.TestCase):
         if isinstance(form, html.Form):
             self.assertTrue(form.action is not None)
             target = form.action
-            self.assertTrue(target.get_addr() == ('localhost', 80))
-            self.assertTrue(isinstance(target, params.HTTPURL))
+            self.assertTrue(target.get_addr() == ('www.example.com', 8443))
+            self.assertTrue(isinstance(target, params.HTTPSURL))
             # get the input fields
             query = {}
             for input in form.find_children_depth_first(html.Input):
-                if input.name in ("return", "sid", "submit"):
+                if input.name in ("return", "s", "sig", "submit"):
                     query[input.name] = str(input.value)
-            query = urllib.urlencode(query)
+            query = urlencode(query)
         elif isinstance(form, html.A):
             # just a link
             target = form.href
@@ -1669,8 +1728,8 @@ class FullAppTests(unittest.TestCase):
         target = req.headers['location']
         self.assertTrue(len(target) == 1)
         target = URI.from_octets(target[0])
-        self.assertTrue(target.get_addr() == ('localhost', 80))
-        self.assertTrue(isinstance(target, params.HTTPURL))
+        self.assertTrue(target.get_addr() == ('www.example.com', 8443))
+        self.assertTrue(isinstance(target, params.HTTPSURL))
         # and we expect a warning cookie
         self.assertTrue(self.app._test_cookie in req.cookies)
         # and we expect a session cookie
@@ -1687,8 +1746,8 @@ class FullAppTests(unittest.TestCase):
         target = req.headers['location']
         self.assertTrue(len(target) == 1)
         target = URI.from_octets(target[0])
-        self.assertTrue(target.get_addr() == ('localhost', 80))
-        self.assertTrue(isinstance(target, params.HTTPURL))
+        self.assertTrue(target.get_addr() == ('www.example.com', 8443))
+        self.assertTrue(isinstance(target, params.HTTPSURL))
         self.assertTrue(target.abs_path == '/')
         # and an updated sid!
         self.assertTrue(self.app._session_cookie in req.cookies)
@@ -1724,7 +1783,7 @@ class FullAppTests(unittest.TestCase):
             for input in form.find_children_depth_first(html.Input):
                 if input.name in ("return", "sid", "submit"):
                     query[input.name] = str(input.value)
-            query = urllib.urlencode(query)
+            query = urlencode(query)
         elif isinstance(form, html.A):
             # just a link
             target = form.href
@@ -1742,12 +1801,9 @@ class FullAppTests(unittest.TestCase):
         target = req.headers['location']
         self.assertTrue(len(target) == 1)
         target = URI.from_octets(target[0])
-        self.assertTrue(target.get_addr() == ('localhost', 80))
-        self.assertTrue(isinstance(target, params.HTTPURL))
+        self.assertTrue(target.get_addr() == ('www.example.com', 8443))
+        self.assertTrue(isinstance(target, params.HTTPSURL))
         self.assertTrue(target.abs_path == '/')
-        # our session should be merged in, so we have the existing sid
-        # and therefore no cookie need be set
-        self.assertFalse(self.app._session_cookie in req.cookies)
         # now we repeat the first request with the cookies again, should
         # not get a redirect anymore
         req = MockRequest()
@@ -1781,7 +1837,7 @@ class FullAppTests(unittest.TestCase):
             for input in form.find_children_depth_first(html.Input):
                 if input.name in ("return", "sid", "submit"):
                     query[input.name] = str(input.value)
-            query = urllib.urlencode(query)
+            query = urlencode(query)
         elif isinstance(form, html.A):
             # just a link
             target = form.href
@@ -1802,5 +1858,5 @@ class FullAppTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
     unittest.main()
