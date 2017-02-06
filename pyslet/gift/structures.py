@@ -1734,9 +1734,18 @@ class Document(Node):
 	"""
 
 	def __init__(self, root=None, base_uri=None, **kws):
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 7b18605935b03b1a3c17ad16627be8742d5eef56
 		base_uri = kws.get('baseURI', base_uri)
 		super(Document, self).__init__()
 		# base_uri = kws.get('baseURI', base_uri)
+<<<<<<< HEAD
+=======
+		super().__init__()
+>>>>>>> gift-support-hack
+>>>>>>> 7b18605935b03b1a3c17ad16627be8742d5eef56
 		self.base_uri = None
 		self.root = None
 		"""The root element or None if no root element has been created yet.
