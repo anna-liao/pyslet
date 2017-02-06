@@ -10,6 +10,7 @@ from io import StringIO
 from tempfile import mkdtemp
 from pyslet import rfc2396 as uri
 from pyslet.gift import structures
+from pyslet.py2 import force_text
 
 
 def suite():
@@ -179,11 +180,13 @@ class GIFTEntityTests(unittest.TestCase):
 		e = structures.GIFTEntity(b"hello")
 		self.assertTrue(e.line_num == 1)
 		self.assertTrue(e.line_pos == 1)
-		self.assertTrue(isinstance(e.the_char, str) and e.the_char == 'h')
-		e = structures.GIFTEntity(StringIO("hello"))
+		# self.assertTrue(isinstance(e.the_char, str) and e.the_char == 'h')
+		self.assertTrue(e.the_char == 'h')
+		e = structures.GIFTEntity(StringIO(force_text("hello")))
 		self.assertTrue(e.line_num == 1)
 		self.assertTrue(e.line_pos == 1)
-		self.assertTrue(isinstance(e.the_char, str) and e.the_char == 'h')
+		# self.assertTrue(isinstance(e.the_char, str) and e.the_char == 'h')
+		self.assertTrue(e.the_char == 'h')
 
 	def test_chars(self):
 		e = structures.GIFTEntity(b"hello")

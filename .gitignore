@@ -35,5 +35,6 @@ flake8-count.txt
 * virtual env
 py3env
 py3-venv
+py27-venv
 
 gift_test*

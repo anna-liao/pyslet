@@ -9,6 +9,7 @@ import random
 import warnings
 
 from copy import copy
+from ..py2 import force_text
 from .py3 import (
     PY2,
 	# is_text,
@@ -1425,7 +1426,7 @@ class Element(Node):
 		"""Returns the GIFT element as a str"""
 		s = io.StringIO()
 		for data in self.generate_gift(root=True):
-			s.write(data)
+			s.write(force_text(data))
 		return s.getvalue()
 
 	def deepcopy(self, parent=None):
@@ -1734,18 +1735,9 @@ class Document(Node):
 	"""
 
 	def __init__(self, root=None, base_uri=None, **kws):
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
->>>>>>> 7b18605935b03b1a3c17ad16627be8742d5eef56
 		base_uri = kws.get('baseURI', base_uri)
 		super(Document, self).__init__()
 		# base_uri = kws.get('baseURI', base_uri)
-<<<<<<< HEAD
-=======
-		super().__init__()
->>>>>>> gift-support-hack
->>>>>>> 7b18605935b03b1a3c17ad16627be8742d5eef56
 		self.base_uri = None
 		self.root = None
 		"""The root element or None if no root element has been created yet.
