@@ -2,6 +2,7 @@
 *.db
 *.sqlite3
 
+
 # Packages
 *.egg
 *.egg-info
@@ -29,7 +30,12 @@ samples/pyslet
 samples/noticeboard/pyslet
 pep8-count.txt
 flake8-count.txt
+# .DS_Store is a mac file that stores custom attributes of its containing folder
+.DS_Store
 
 * virtual env
 py3env
 py3-venv
+py27-venv
+
+gift_test*
