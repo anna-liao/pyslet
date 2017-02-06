@@ -157,17 +157,25 @@ class GIFTParserTests(unittest.TestCase):
 	def test_element(self):
 		# s = """//comment\n"""
 		# s = "::Question title\n"
-		s = """//comment\n::Question title\n:: Question {\n=A correct answer\n~Wrong answer1\n}"""
+		s = """//comment\n::Question title\n::Question{\n=A correct answer\n~Wrong answer1\n}"""
 		with structures.GIFTEntity(s) as e:
 			p = parser.GIFTParser(e)
 			element = p.element = structures.Element("a")
 			p.parse_element()
 			children = list(element.get_children())
+			self.assertTrue(len(children) == 4, "Number of children: %i" % len(children))
 			self.assertTrue(isinstance(children[0], structures.Element), "First element: %s" % repr(children[0]))
 			self.assertTrue(children[0].giftname == 'questionTitle', "First element name: %s" % repr(children[0].giftname))
-			self.assertTrue(children[0].get_value() == 'Question title')
-
-			# self.assertTrue(isinstance(children[1], structures.Element), "Second element: %s" % repr(children[1]))
+			self.assertTrue(children[0].get_value() == 'Question title', "First element value: %s" % repr(children[0].get_value()))
+			self.assertTrue(isinstance(children[1], structures.Element), "Second element: %s" % repr(children[1]))
+			self.assertTrue(children[1].giftname == 'question', "Second element name: %s" % repr(children[1].giftname))
+			self.assertTrue(children[1].get_value() == "Question", "Second element value: %s" % repr(children[1].get_value()))
+			self.assertTrue(isinstance(children[2], structures.Element), "Third element: %s" % repr(children[2]))
+			self.assertTrue(children[2].giftname == 'correctResponse', "Third element name: %s" % repr(children[2].giftname))
+			self.assertTrue(children[2].get_value() == 'A correct answer', "Third element value: %s" % repr(children[3].get_value()))
+			self.assertTrue(isinstance(children[3], structures.Element), "Fourth element: %s" % repr(children[3]))
+			self.assertTrue(children[3].giftname == 'wrongResponse', "Fourth element name: %s" % repr(children[3].giftname))
+			self.assertTrue(children[3].get_value() == "Wrong answer1", "Fourth element value: %s" % repr(children[3].get_value()))
 
 	# def test_empty_question(self):
 	# 	empty_q = ":: Question title :: Question {}"

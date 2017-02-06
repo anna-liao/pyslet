@@ -633,7 +633,7 @@ class GIFTParser:
 		"""
 		data = []
 		while self.the_char is not None:
-			if self.the_char == '\n':
+			if self.the_char in ['{', '\n']:
 				break
 			self.is_s()
 			data.append(self.the_char)
@@ -869,15 +869,17 @@ class GIFTParser:
 					self.parse_element('question')
 			elif self.the_char == '{':
 				# indicates end of question
+				# self.in_responses = True
 				# self.next_char()
-				self.buff_text('{')
-				self.in_responses = True
-			elif self.the_char == '=' and self.in_responses:
+				# self.next_char()
+				self.parse_required_literal('{')
+				# return True
+			elif self.the_char == '=':
 				# correct answer
 				self.next_char()
 				# self.parse_correct_response()
 				self.parse_element('correctResponse')
-			elif self.the_char == '~' and self.in_responses:
+			elif self.the_char == '~':
 				# wrong answer
 				self.next_char()
 				# self.parse_wrong_answer()
@@ -885,12 +887,15 @@ class GIFTParser:
 			# elif self.the_char == '#' and in_responses:
 			# 	# response to wrong answer
 			# 	self.parse_response_to_wrong_answer()
-			elif self.the_char == '}' and self.in_responses:
+			elif self.the_char == '}':
 				# end of question
 				self.next_char()
-				self.in_responses = False
+				# self.in_responses = False
 			elif self.the_char == ' ':
 				self.next_char()
+				if self.the_char == '{':
+					self.next_char()
+					return True
 			elif self.the_char == '\n':
 				self.next_char()
 				return True
