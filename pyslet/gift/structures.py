@@ -303,6 +303,7 @@ class Node(object):
 	"""
 	def __init__(self, parent=None):
 		self.parent = parent
+		super(Node, self).__init__()
 		"""The parent of this element, for GIFT documents this attribute is
 		used as a sentinel to simplify traversal of the hierarchy and is set
 		to None."""
@@ -1966,7 +1967,7 @@ class Document(Node):
 			constructor.
 		"""
 		self.data = []
-		e = GIFTEntity()
+		e = GIFTEntity(src)
 		self.read_from_entity(e)
 
 	def read_from_entity(self, e):

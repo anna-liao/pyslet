@@ -131,7 +131,7 @@ class GIFTParser:
 			the optional system ID of hte doctype, if None or omitted (the usual case)
 			the document class can match any system ID.
 		"""
-		pass
+		raise NotImplementedError
 
 	#: Default constant used for setting :py:attr:`refMode`
 	RefModeNone = 0
@@ -535,7 +535,7 @@ class GIFTParser:
 		if self.doc is None:
 			raise gift.GIFTFatalError("parse_document(): self.doc is None")
 		self.parse_element()
-		self.parse_misc()
+		# self.parse_misc()
 		if self.the_char is not None and not self.dont_check_wellformedness:
 			self.well_formedness_error("Unparsed characters in entity after document: %s" %
 				repr(self.the_char))
@@ -681,7 +681,7 @@ class GIFTParser:
 	control_chars = ('~', '=', '#', '}')
 
 	def parse_element(self, name=None):
-		production = "[39] element"
+		# production = "[39] element"
 		save_element = self.element
 		save_element_type = self.elementType
 		save_cursor = None
@@ -689,7 +689,8 @@ class GIFTParser:
 			context = self.get_context()
 			self.element = context.add_child(gift.Element, name)
 		self.parse_content()
-		self.element.content_changed()
+		if name:
+			self.element.content_changed()
 		self.element = save_element
 		self.elementType = save_element_type
 		self.cursor = save_cursor
