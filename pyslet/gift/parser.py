@@ -228,6 +228,7 @@ class GIFTParser:
 		self.gotPERef = False
 		self.in_question = False
 		self.in_responses = False
+		#self.wrongResponseIndex = 1
 
 	def get_context(self):
 		"""Returns the parser's context
