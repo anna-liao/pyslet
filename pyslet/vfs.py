@@ -961,6 +961,7 @@ class OSFilePath(VirtualFilePath):
 
     #: copied from os.sep
     sep = os.sep
+    # sep = str.encode(os.sep)
 
     #: copied from os.curdir
     curdir = os.curdir
