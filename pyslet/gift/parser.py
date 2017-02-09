@@ -3,6 +3,7 @@ import logging
 
 from pyslet.gift import structures as gift
 from ..pep8 import PEP8Compatibility
+from .py3 import dict_keys
 
 
 class GIFTFatalError(gift.GIFTError):
@@ -70,19 +71,96 @@ class ContentParticleCursor(object):
 	used to change the position of the cursor.  The end of the content
 	model is represented by a special entry that maps the empty string
 	to None.
-
 	"""
+
+	START_STATE = 0     #: State constant representing the start state
+	PARTICLE_STATE = 1  #: State constant representing a particle
+	END_STATE = 2       #: State constant representing the end state
+
 	def __init__(self, element_type):
-		pass
+		self.element_type = element_type
+		self.state = ContentParticleCursor.START_STATE
+		self.plist = []
 
 	def next(self, name=''):
 		"""Called when a child element with *name* is encountered.
+
+		Returns True if *name* is a valid element and advances the
+		model.  If *name* is not valid then it returns False and the
+		cursor is unchanged.
 		"""
-		pass
+		if self.state == ContentParticleCursor.START_STATE:
+			if self.element_type.particle_map is not None:
+				if name in self.element_type.particle_map:
+					self.plist = self.element_type.particle_map[name]
+					if self.plist is None:
+						self.state = ContentParticleCursor.END_STATE
+					else:
+						if not isinstance(self.plist, list):
+							self.plist = [self.plist]
+						self.state = ContentParticleCursor.PARTICLE_STATE
+					return True
+				else:
+					return False
+			elif self.element_type.content_type == gift.ElementType.ANY:
+				# anything goes for an ANY element, we stay in the start state
+				if not name:
+					self.state = ContentParticleCursor.END_STATE
+				return True
+			elif self.element_type.content_type == gift.ElementType.EMPTY:
+				# empty elements, or unparsed elements
+				if not name:
+					self.state = ContentParticleCursor.END_STATE
+					return True
+				else:
+					return False
+			elif self.state == ContentParticleCursor.PARTICLE_STATE:
+				new_plist = []
+				for p in self.plist:
+					# go through all possible particles
+					if name in p.particle_map:
+						ps = p.particle_map[name]
+						if ps is None:
+							# short cut to end state
+							new_plist = None
+							self.state = ContentParticleCursor.END_STATE
+							break
+						if isinstance(ps, list):
+							new_plist = new_plist + ps
+						else:
+							new_plist.append(ps)
+				if new_plist is None or len(new_plist) > 0:
+					# success if we got to the end state or have found particles
+					self.plist = new_plist
+					return True
+				else:
+					return False
+			else:
+				# when in the end state everything is invalid
+				return False
 
 	def expected(self):
 		"""Sorted list of valid element names in the current state.
 		"""
+		expected = {}
+		end_tag = None
+		if self.state == ContentParticleCursor.START_STATE:
+			for name in dict_keys(self.element_type.particle_map):
+				if name:
+					expected[name] = True
+				else:
+					end_tag = "</%s>" % self.element_type.name
+		elif self.state == ContentParticleCursor.PARTICLE_STATE:
+			for p in self.plist:
+				for name in dict_keys(p.particle_map):
+					if name:
+						expected[name] = True
+					else:
+						end_tag = "</%s>" % self.element_type.name
+		result = sorted(dict_keys(expected))
+		if end_tag:
+			result.append(end_tag)
+		return result
 
 
 # class GIFTParser(PEP8Compatibility):
@@ -521,20 +599,30 @@ class GIFTParser:
 		"""
 		self.refMode == GIFTParser.RefModeInContent
 		self.doc = doc
-		# if self.checkAllErrors:
-		# 	self.checkCompatibility = True
-		# if self.checkCompatibility:
-		# 	self.check_validity = True
-		# if self.check_validity:
-		# 	self.valid = True
-		# else:
-		# 	self.valid = None
-		self.valid = None
+		if self.checkAllErrors:
+			self.checkCompatibility = True
+		if self.checkCompatibility:
+			self.check_validity = True
+		if self.check_validity:
+			self.valid = True
+		else:
+			self.valid = None
 		self.nonFatalErrors = []
 		# self.parse_prolog()
 		if self.doc is None:
-			raise gift.GIFTFatalError("parse_document(): self.doc is None")
+			if self.dtd.name is not None:
+				# create the document based on information in the DTD
+				self.doc = self.get_document_class(self.dtd)()
+				# set the document's dtd
+				self.doc.dtd = self.dtd
+		elif self.doc.dtd is None:
+			# override the document's DTD
+			self.doc.dtd = self.dtd
 		self.parse_element()
+		if self.check_validity:
+			for idref in dict_keys(self.idRefTable):
+				if idref not in self.idTable:
+					self.validity_error("IDREF: %s does not match any ID attribute value")
 		# self.parse_misc()
 		if self.the_char is not None and not self.dont_check_wellformedness:
 			self.well_formedness_error("Unparsed characters in entity after document: %s" %
@@ -542,10 +630,12 @@ class GIFTParser:
 		return self.doc
 
 	def get_document_class(self, dtd):
+		"""Returns a class object suitable for this dtd
+
+		dtd
+			A :py:class:`~pyslet.xml.structures.XMLDTD` instance
+		
 		"""
-		https://github.com/swl10/pyslet/blob/master/pyslet/xml/parser.py#L1176
-		"""
-		raise NotImplementedError
 
 	def is_s(self):
 		"""Tests if the current character matches S

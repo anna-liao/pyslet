@@ -17,6 +17,7 @@ from .py3 import (
 	join_characters,
 	uspace,
 	uempty,
+	dict_keys,
 	character)
 from .. import rfc2396 as uri
 from types import MethodType
@@ -1644,24 +1645,203 @@ class Element(Node):
 		raise NotImplementedError
 
 
-class GIFTContentParticle(object):
+class GIFTDTD(object):
+	"""An object that models a document type declaration.
+
+	The document type declaration acts as a container for the entity,
+	element and attribute declarations used in a document.
+	"""
 	def __init__(self):
+		self.name = None
+		#: The declared Name of the root element
+		#: An :py:class:`GIFTExternalID` instance (may be None)
+		self.external_id = None
+		self.parameter_entities = {}
+		"""A dictionary of GIFTParameterEntity instances keyed on entity name."""
+		self.general_entities = {}
+		"""A dictionary of GIFTGeneralEntity instances keyed on notation name."""
+		self.notations = {}
+		"""A dictionary of GIFTNotation instances keyed on notation name."""
+		self.element_list = {}
+		"""A dictionary of :py:class:`EleemntType` definitions keyed on the name of element."""
+		self.attribute_lists = {}
+		"""A dictionary of dictionaries, keyed on element name.  Each of the resulting dictionaries
+		is a dictionary of :py:class:`GIFTAttributeDefinition` keyed on attribute name."""
+
+	def declare_entity(self, entity):
+		"""Declares an entity in this document.
+
+		The same method is used for both general and parameter entities.  The value of *entity*
+		can be either an :py:class:`GIFTGeneralEntity` or a :py:class:GIFTParameterEntity` instance.
+		"""
+		if isinstance(entity, GIFTGeneralEntity):
+			self.general_entities[entity.name] = entity
+		elif isinstance(entity, GIFTParameterEntity):
+			self.parameter_entities[entity.name] = entity
+		else:
+			raise ValueError
+
+	def get_parameter_entity(self, name):
+		"""Returns the parameter entity definitions matching *name*.
+
+		Returns an instance of :py:class:`GIFTParameterEntity`. If no
+		parameter has been declared with *name* then None is returned.
+		"""
+		return self.parameter_entities.get(name, None)
+
+	def get_entity(self, name):
+		"""Returns the general entity definition matching *name*.
+
+		Returns an instance of :py:class:`GIFTGeneralEntity`. If no
+		general has been declared with *name* then None is returned.
+		"""
+		return self.general_entities.get(name, None)
+
+	def declare_notation(self, notation):
+		"""Declares a notation for this document.
+
+		The value of *notation* must be a :py:class:`GIFTNotation` instance.
+		"""
+		self.notations[notation.name] = notation
+
+	def get_notation(self, name):
+		"""Returns the notation declaration matching *name*.
+
+		name
+			The name of the notation to search for.
+
+		Returns an instance of :py:class:`GIFTNotation`. If no notation
+		has been declared with *name* then None is returned.
+		"""
+		return self.notations.get(name, None)
+
+	def declare_element_type(self, etype):
+		"""Declares an element type.
+
+		etype
+			A :py:class:`ElementType` instance containing the element definition.
+		"""
+		elist = self.element_list.get(etype.name, None)
+		if elist is None:
+			self.element_list[etype.name] = etype
+
+	def get_element_type(self, element_name):
+		"""Looks up an element type definition.
+
+		element_name
+			the name of the element type to look up
+
+		The method returns an instance of :py:class:`ElementType` or
+		None if no element with that name has been declared.
+		"""
+		return self.element_list.get(element_name, None)
+
+	def declare_attribute(self, element_name, attr_def):
 		raise NotImplementedError
 
+	def get_attribute_list(self, name):
+		raise NotImplementedError
+
+	def get_attribute_definition(self, element_name, attr_name):
+		raise NotImplementedError
+
+
+
+class GIFTContentParticle(object):
+
+	# : Occurrence constant for particles that must appear exactly once
+	ExactlyOnce = 0
+	ZeroOrOne = 1
+	ZeroOrMore = 2
+	OneOrMore = 3
+
+	def __init__(self):
+		"""An object for representing content particles."""
+		self.occurrence = GIFTContentParticle.ExactlyOnce
+
 	def build_particle_maps(self, exit_particles):
+		"""Abstract method that builds the particle maps for this node or its children.
+
+		For more information see :py:attr:`GIFTNameParticle.particle_map
+
+		Although only name particles have particle maps this method is called for all
+		particle types to allow the model to be built hierarchically from the root out
+		to the terminal (name) nodes.  *exit_particles* provides a mapping to all the
+		following particles outside the part of the hierarchy rooted at the current node
+		that are directly reachable from the particles inside.
+		"""
 		raise NotImplementedError
 
 	def seek_particles(self, pmap):
+		"""Adds all possible entry particles to pmap.
+
+		Abstract method, *pmap* is a mapping from element name to a list
+		of :py:class:`XMLNameParticles XMLNameParticle`.
+
+		Returns True if a required particle was added, False if all
+		particles added are optional.
+
+		Like :py:meth:`build_particle_maps`, this method is called for
+		all particle types.  The mappings requested represent all
+		particles inside the part of the hierarchy rooted at the current
+		node that are directly reachable from the preceeding particles
+		outside.
+		"""
 		raise NotImplementedError
 
 	def add_particles(self, src_map, pmap):
-		raise NotImplementedError
+		"""A utility method that adds particles from src_map to pmap.
+
+		Both maps are mappings from element name to a list of
+		:py:class:`GIFTNameParticles GIFTNameParticle`.  All entries in
+		*src_map* not currently in *pmap* are added.
+		"""
+		for name in dict_keys(src_map):
+			if name in pmap:
+				# add items from src_map[name] to pmap[name]
+				target_list = pmap[name]
+			elif name:
+				# add items to a new list
+				pmap[name] = target_list = []
+			else:
+				# add end tag sentinel
+				pmap[name] = target_list = None
+			if target_list is not None:
+				# this double loop looks dangerous but the lists will
+				# usually be 1 or 2 particles long at most
+				for ip in src_map[name]:
+					dup = False
+					for jp in target_list:
+						if ip is jp:
+							dup = True
+							break
+					if not dup:
+						target_list.append(ip)
 
 	def is_deterministic(self, pmap):
-		raise NotImplementedError
+		"""A utility method for identifying deterministic particle maps.
+
+		A deterministic particle map is one in which each name maps uniquely
+		to a single content particle. A non-deterministic particle map contains
+		an ambiguity, for example ((b,d)|(b,e)).
+
+		The particle map created by :py:meth:`seek_particles` for the enclosing
+		choice list would have two entries for 'b', one to map the first particle
+		of the first sequence and one to the first particle of the second sequence.
+
+		Although non-deterministic content models are not allowed in SGML they are
+		tolerated in XML and are only flagged as compatibility errors.
+		"""
+		if pmap:
+			for name in dict_keys(pmap):
+				if pmap[name] is not None and len(pmap[name]) > 1:
+					return False
+		return True
 
 
 class GIFTNameParticle(GIFTContentParticle):
+	"""Represents a content particle for a named element"""
+
 	def __init__(self):
 		raise NotImplementedError
 
