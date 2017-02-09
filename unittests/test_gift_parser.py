@@ -23,6 +23,7 @@ TEST_DATA_DIR = os.path.join(
 class GIFTValidationTests(unittest.TestCase):
 
 	def test_well_formed(self):
+		# dpath = os.path.join(TEST_DATA_DIR, 'wellformed')
 		pass
 
 	def test_comment(self):
@@ -153,6 +154,14 @@ class GIFTParserTests(unittest.TestCase):
 			p = parser.GIFTParser(e)
 			p.parse_misc()
 			self.assertTrue(p.the_char is None, "Short parse of Misc")
+
+	# def test_true_false(self):
+	# 	s = """::Q1:: 1+1=2 {T}"""
+	# 	with structures.GIFTEntity(s) as e:
+	# 		p = parser.GIFTParser(e)
+	# 		element = p.element = structures.Element("a")
+	# 		p.parse_element()
+	# 		children = list(element.get_children())
 
 	def test_element(self):
 		# s = """//comment\n"""
