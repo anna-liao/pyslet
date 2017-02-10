@@ -155,13 +155,13 @@ class GIFTParserTests(unittest.TestCase):
 			p.parse_misc()
 			self.assertTrue(p.the_char is None, "Short parse of Misc")
 
-	# def test_true_false(self):
-	# 	s = """::Q1:: 1+1=2 {T}"""
-	# 	with structures.GIFTEntity(s) as e:
-	# 		p = parser.GIFTParser(e)
-	# 		element = p.element = structures.Element("a")
-	# 		p.parse_element()
-	# 		children = list(element.get_children())
+	def test_true_false(self):
+		s = """::Q1::1+1=2{T}"""
+		with structures.GIFTEntity(s) as e:
+			p = parser.GIFTParser(e)
+			element = p.element = structures.Element("a")
+			p.parse_element()
+			children = list(element.get_children())
 
 	def test_element(self):
 		# s = """//comment\n"""

@@ -1843,16 +1843,42 @@ class GIFTNameParticle(GIFTContentParticle):
 	"""Represents a content particle for a named element"""
 
 	def __init__(self):
-		raise NotImplementedError
+		GIFTContentParticle.__init__(self)
+		#: the name of the element type that matches this particle
+		self.name = None
+		self.particle_map = {}
+		"""Each :py:class:`GIFTNameParticle` has a particle map that
+		maps the name of the 'next' element found in the content model
+		to the list of possible :py:class:`GIFTNameParticles GIFTNameParticle`
+		that represent it in the content model.
+
+		The content model can be traversed using :py:class:`ContentParticleCursor`.
+		"""
 
 	def build_particle_maps(self, exit_particles):
-		raise NotImplementedError
+		self.particle_map = {}
+		if self.occurrence == GIFTContentParticle.ZeroOrMore or \
+				self.occurrence == GIFTContentParticle.OneOrMore:
+			# repeatable element, add ourselves to the map
+			self.particle_map[self.name] = [self]
+		self.add_particles(exit_particles, self.particle_map)
 
 	def seek_particles(self, pmap):
-		raise NotImplementedError
+		if self.name in pmap:
+			target_list = pmap[self.name]
+			dup = False
+			for p in target_list:
+				if p is self:
+					dup = True
+			if not dup:
+				target_list.append(self)
+		else:
+			pmap[self.name] = [self]
+		return self.occurrence == GIFTContentParticle.OneOrMore or \
+			self.occurrence == GIFTContentParticle.ExactlyOnce
 
 	def is_deterministic(self):
-		raise NotImplementedError
+		return GIFTContentParticle.is_deterministic(self, self.particle_map)
 
 
 class GIFTChoiceList(GIFTContentParticle):
@@ -2262,7 +2288,7 @@ class Document(Node):
 		pass
 
 
-class GIFTEntity():
+class GIFTEntity(object):
 	"""Represents a GIFT entity.
 
 	https://github.com/swl10/pyslet/blob/master/pyslet/xml/structures.py#L3188

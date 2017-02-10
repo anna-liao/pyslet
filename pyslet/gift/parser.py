@@ -964,8 +964,11 @@ class GIFTParser:
 				# self.in_responses = True
 				# self.next_char()
 				# self.next_char()
-				self.parse_required_literal('{')
+				# self.parse_required_literal('{')
 				# return True
+				self.next_char()
+				if self.the_char == 'T' or self.the_char == 'F':
+					self.parse_element('boolean')
 			elif self.the_char == '=':
 				# correct answer
 				self.next_char()
