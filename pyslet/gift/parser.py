@@ -1029,8 +1029,7 @@ class GIFTParser:
 
 		# if qtype is None, assume it is multiple choice
 		for c in data:
-			if qtype == 'truefalse':
-
+			raise NotImplementedError
 
 	def parse_content(self):
 		"""[43] content
