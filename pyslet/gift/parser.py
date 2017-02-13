@@ -306,7 +306,8 @@ class GIFTParser:
 		self.gotPERef = False
 		self.in_question = False
 		self.in_responses = False
-		#self.wrongResponseIndex = 1
+		# self.wrongResponseIndex = 1
+		self.after_brackets = False
 
 	def get_context(self):
 		"""Returns the parser's context
@@ -915,6 +916,122 @@ class GIFTParser:
 		# self.parse_s()
 		return
 
+	def parse_content_new(self):
+		"""
+		::Q1:: 1+1=2 {T}
+		
+		::Q2:: What's between orange and green in the spectrum?
+		{ =yellow # right; good! ~red # wrong, it's yellow ~blue # wrong, it's yellow }
+
+		::Q3:: Two plus {=two =2} equals four.
+
+		::Q4:: Which animal eats which food? { =cat -> cat food =dog -> dog food }
+
+		::Q5:: What is a number from 1 to 5? {#3:2}
+
+		::Q6:: What is a number from 1 to 5? {#1..5}
+
+		::Q7:: When was Ulysses S. Grant born? {#
+        =1822:0      # Correct! Full credit.
+        =%50%1822:2  # He was born in 1822. Half credit for being close.
+		}
+
+		::Q8:: How are you? {}
+
+		The format changes after the question title (after the second set of ::).  Buffer all the text after that,
+		and then determine which type it is.
+		"""
+		while True:
+			if isinstance(self.the_char, int):
+				self.the_char = chr(self.the_char)
+			if self.the_char == '/':
+				self.parse_require_literal('//')
+				self.parse_comment(True)
+			elif self.the_char == ':':
+				self.next_char()
+				if self.the_char == ':' and not self.in_question:
+					self.in_question = True
+					self.next_char()
+					self.parse_element('questionTitle')
+				else:
+					self.in_question = False
+					self.process_question()
+			elif self.the_char == '\n':
+				self.next_char()
+				return True
+			elif self.the_char is None:
+				# end of entity
+				return True
+			else:
+				self.parse_char_data()
+		return True
+
+	def process_question(self):
+		"""
+		::Q1:: 1+1=2 {T}
+		
+		::Q2:: What's between orange and green in the spectrum?
+		{ =yellow # right; good! ~red # wrong, it's yellow ~blue # wrong, it's yellow }
+
+		::Q3:: Two plus {=two =2} equals four.
+		# Maybe same as QTI inline choice: https://www.imsglobal.org/question/qtiv2p2/examples/items/inline_choice.xml
+
+		::Q4:: Which animal eats which food? { =cat -> cat food =dog -> dog food }
+
+		::Q5:: What is a number from 1 to 5? {#3:2}
+
+		::Q6:: What is a number from 1 to 5? {#1..5}
+
+		::Q7:: When was Ulysses S. Grant born? {#
+        =1822:0      # Correct! Full credit.
+        =%50%1822:2  # He was born in 1822. Half credit for being close.
+		}
+
+		::Q8:: How are you? {}
+		"""
+		data = []
+		in_brackets = False
+		after_brackets = False
+		qtype = None
+		while self.the_char is not None:
+			if self.the_char == '{':
+				in_brackets = True
+				data.append(self.the_char)
+				self.next_char()
+				if self.the_char == '#':
+					if not qtype:
+						qtype = 'numeric'
+					else:
+						raise gift.GIFTFatalError("Parsing error: qtype already assigned, %s" % qtype)
+			elif self.the_char == '}':
+				in_brackets = False
+				after_brackets = True
+			elif in_brackets and self.the_char in ('T', 'F'):
+				if not qtype:
+					qtype = 'truefalse'
+				else:
+					raise gift.GIFTFatalError("Parsing error: qtype already assigned, %s" % qtype)
+			elif after_brackets and self.the_char not in (' ', None):
+				if not qtype:
+					qtype = 'fillintheblank'
+				else:
+					raise gift.GIFTFatalError("Parsing error: qtype already assigned, %s" % qtype)
+			elif in_brackets and self.the_char == '-':
+				data.append(self.the_char)
+				self.next_char()
+				if self.the_char == '>':
+					if not qtype:
+						qtype = 'matching'
+					else:
+						raise gift.GIFTFatalError("Parsing error: qtype already assigned, %s" % qtype)
+			data.append(self.the_char)
+			self.next_char()
+
+		# if qtype is None, assume it is multiple choice
+		for c in data:
+			if qtype == 'truefalse':
+
+
 	def parse_content(self):
 		"""[43] content
 
@@ -986,6 +1103,7 @@ class GIFTParser:
 				# end of question
 				self.next_char()
 				# self.in_responses = False
+				while self.the_char in ()
 			elif self.the_char == ' ':
 				self.next_char()
 				if self.the_char == '{':
