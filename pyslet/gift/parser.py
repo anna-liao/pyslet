@@ -308,6 +308,7 @@ class GIFTParser:
 		self.in_responses = False
 		# self.wrongResponseIndex = 1
 		self.after_brackets = False
+		self.numeric_type = False
 
 	def get_context(self):
 		"""Returns the parser's context
@@ -1031,6 +1032,8 @@ class GIFTParser:
 		for c in data:
 			raise NotImplementedError
 
+digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+
 	def parse_content(self):
 		"""[43] content
 
@@ -1070,14 +1073,17 @@ class GIFTParser:
 					# second '::' precedes actual question
 					# self.parse_question_title()
 					self.parse_element('questionTitle')
-				else:
+				elif self.the_char == ':' and self.in_question:
 					self.in_question = False
 					self.next_char()
 					# self.parse_question()
 					self.parse_element('question')
+				elif self.numeric_type and self.in_responses and self.the_char in digits:
+					# numeric range
+					raise NotImplementedError
 			elif self.the_char == '{':
 				# indicates end of question
-				# self.in_responses = True
+				self.in_responses = True
 				# self.next_char()
 				# self.next_char()
 				# self.parse_required_literal('{')
@@ -1102,18 +1108,29 @@ class GIFTParser:
 				# end of question
 				self.next_char()
 				# self.in_responses = False
-				while self.the_char in ()
+				self.after_brackets = True
 			elif self.the_char == ' ':
 				self.next_char()
 				if self.the_char == '{':
 					self.next_char()
+					while self.the_char == ' ':
+						self.next_char()
+					if self.the_char == '#':
+						self.numeric_type = True
+						self.next_char()
 					return True
 			elif self.the_char == '\n':
 				self.next_char()
+				self.after_brackets = False
+				self.numeric_type = False
 				return True
 			elif self.the_char is None:
 				# end of entity
+				self.after_brackets = False
+				self.numeric_type = False
 				return True
+			elif self.after_brackets:
+				self.parse_element('fillintheblankRemainder')
 			else:
 				self.parse_char_data()
 		return True
