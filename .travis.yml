@@ -7,6 +7,6 @@ script:
   - tox
 
 # blocklist
-branches:
-  except:
-    - gift-support-hack
+# branches:
+#  except:
+#    - gift-support-hack
