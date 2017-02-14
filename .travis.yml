@@ -5,3 +5,8 @@ install:
   - pip install tox
 script:
   - tox
+
+# blocklist
+branches:
+  except:
+    - gift-support-hack

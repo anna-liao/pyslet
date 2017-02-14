@@ -305,6 +305,7 @@ class GIFTParser:
 		self.noPERefs = False
 		self.gotPERef = False
 		self.in_question = False
+		self.parse_question_title = False
 		self.in_question_title = False
 		self.in_responses = False
 		self.in_correct_response = False
@@ -315,6 +316,7 @@ class GIFTParser:
 
 	def reset(self):
 		self.in_question = False
+		self.parse_question_title = False
 		self.in_question_title = False
 		self.in_responses = False
 		self.in_correct_response = False
@@ -785,21 +787,6 @@ class GIFTParser:
 
 	control_chars = ('~', '=', '#', '}')
 
-	def parse_element(self, name=None):
-		# production = "[39] element"
-		save_element = self.element
-		save_element_type = self.elementType
-		save_cursor = None
-		if name:
-			context = self.get_context()
-			self.element = context.add_child(gift.Element, name)
-		self.parse_content()
-		if name:
-			self.element.content_changed()
-		self.element = save_element
-		self.elementType = save_element_type
-		self.cursor = save_cursor
-		return True
 
 	def parse_question_title(self, got_literal=False):
 		""" ::Question title::
@@ -1066,22 +1053,27 @@ class GIFTParser:
 		# in_question = False
 		# in_responses = False
 		while True:
-			if isinstance(self.the_char, int):
-				self.the_char = chr(self.the_char)
+			# if isinstance(self.the_char, int):
+			# 	self.the_char = chr(self.the_char)
 
-			if self.in_question_title:
-				self.in_question_title = False
-				self.parse_element('questionTitle')
+			# if self.parse_question_title:
+			# 	print('if self.parse_question_title')
+			# 	self.parse_question_title = False
+			# 	self.parse_element('questionTitle')
 			if self.in_question:
+				print("elif self.in_question")
 				self.in_question = False
 				self.parse_element('question')
 			elif self.in_correct_response:
+				print("elif self.in_correct_response")
 				self.in_correct_response = False
 				self.parse_element('correctResponse')
 			elif self.in_wrong_response:
+				print("elif self.in_wrong_response")
 				self.in_wrong_response = False
 				self.parse_element('wrongResponse')
 			elif self.in_boolean:
+				print("self.in_boolean")
 				self.in_boolean = False
 				self.parse_element('boolean')
 			elif self.the_char == '/':
@@ -1098,12 +1090,15 @@ class GIFTParser:
 			if self.the_char == ':':
 				self.next_char()
 				if self.the_char == ':' and not self.in_question_title:
+					print("if self.the_char == ':' and not self.in_question_title")
 					self.in_question_title = True
+					# self.parse_question_title = True
 					self.next_char()
-					return True
-					# self.parse_element('questionTitle')
+					# return True
+					self.parse_element('questionTitle')
 				# elif self.the_char == ':' and self.in_question:
 				elif self.the_char == ':' and self.in_question_title:
+					print("if self.the_char == ':' and self.in_question_title")
 					self.in_question_title = False
 					self.in_question = True
 					self.next_char()
@@ -1117,6 +1112,7 @@ class GIFTParser:
 					raise GIFTValidityError("gift.parser invalid input.")
 			elif self.the_char == '{':
 				# indicates end of question
+				print("elif self.the_char == '{'")
 				self.in_responses = True
 				# self.next_char()
 				# self.next_char()
@@ -1124,19 +1120,23 @@ class GIFTParser:
 				# return True
 				self.next_char()
 				self.skip()
-				if self.the_char == 'T' or self.the_char == 'F':
+				if self.the_char in ('T', 'F'):
+					print("if self.the_char in ('T', 'F')")
 					self.in_boolean = True
 					# self.parse_element('boolean')
 					return True
 				elif self.the_char == '#':
+					print("elif self.the_char == '#'")
 					self.numeric_type = True
 					self.next_char()
 					self.skip()
 					if self.the_char in digits:
+						print("if self.the_char in digits")
 						self.in_correct_response = True
 						return True
 						# self.parse_element('correctResponse')
 			elif self.the_char == '=' and self.in_responses:
+				print("elif self.the_char == '=' and self.in_responses")
 				# correct answer
 				self.next_char()
 				self.in_correct_response = True
@@ -1144,6 +1144,7 @@ class GIFTParser:
 				# self.parse_element('correctResponse')
 				return True
 			elif self.the_char == '~' and self.in_responses:
+				print("elif self.the_char == '~' and self.in_responses")
 				# wrong answer
 				self.next_char()
 				self.in_wrong_response = True
@@ -1154,20 +1155,24 @@ class GIFTParser:
 			# 	# response to wrong answer
 			# 	self.parse_response_to_wrong_answer()
 			elif self.the_char == '}':
+				print("elif self.the_char == '}'")
 				# end of question
 				self.next_char()
 				self.reset()
 				return True
 			elif self.the_char == ' ':
+				print("elif self.the_char == ' '")
 				self.next_char()
 			elif self.the_char == '\n':
+				print("elif self.the_char == '\n'")
 				self.next_char()
-				self.reset()
 			elif self.the_char is None:
 				# end of entity
+				print("elif self.the_char is None")
 				self.reset()
 				return True
 			elif self.the_char.isalnum() and self.after_brackets:
+				print("elif self.the_char.isalnum() and self.after_brackets")
 				self.parse_element('fillintheblankRemainder')
 			else:
 				self.parse_char_data()

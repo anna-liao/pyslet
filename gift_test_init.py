@@ -14,4 +14,4 @@ for child in children:
 	if isinstance(child, structures.Element):
 		print("{}, {}".format(child.giftname, child.get_value()))
 	else:
-		print(child)
+		print("WARNING, child is string type: {}".format(child))
