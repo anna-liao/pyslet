@@ -305,8 +305,21 @@ class GIFTParser:
 		self.noPERefs = False
 		self.gotPERef = False
 		self.in_question = False
+		self.in_question_title = False
 		self.in_responses = False
-		# self.wrongResponseIndex = 1
+		self.in_correct_response = False
+		self.in_wrong_response = False
+		self.in_boolean = False
+		self.after_brackets = False
+		self.numeric_type = False
+
+	def reset(self):
+		self.in_question = False
+		self.in_question_title = False
+		self.in_responses = False
+		self.in_correct_response = False
+		self.in_wrong_response = False
+		self.in_boolean = False
 		self.after_brackets = False
 		self.numeric_type = False
 
@@ -1032,7 +1045,11 @@ class GIFTParser:
 		for c in data:
 			raise NotImplementedError
 
-digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+	digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+
+	def skip(self):
+		while self.the_char in ('\n', ' '):
+			self.next_char()
 
 	def parse_content(self):
 		"""[43] content
@@ -1052,7 +1069,22 @@ digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
 			if isinstance(self.the_char, int):
 				self.the_char = chr(self.the_char)
 
-			if self.the_char == '/':
+			if self.in_question_title:
+				self.in_question_title = False
+				self.parse_element('questionTitle')
+			if self.in_question:
+				self.in_question = False
+				self.parse_element('question')
+			elif self.in_correct_response:
+				self.in_correct_response = False
+				self.parse_element('correctResponse')
+			elif self.in_wrong_response:
+				self.in_wrong_response = False
+				self.parse_element('wrongResponse')
+			elif self.in_boolean:
+				self.in_boolean = False
+				self.parse_element('boolean')
+			elif self.the_char == '/':
 				self.parse_required_literal('//')
 				self.parse_comment(True)
 			# if self.the_char == '/':
@@ -1063,24 +1095,26 @@ digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
 			# 		self.parse_comment(True)
 			# 	else:
 			# 		self.well_formedness_error("Expected Comment")
-			elif self.the_char == ':':
+			if self.the_char == ':':
 				self.next_char()
-				if self.the_char == ':' and not self.in_question:
+				if self.the_char == ':' and not self.in_question_title:
+					self.in_question_title = True
+					self.next_char()
+					return True
+					# self.parse_element('questionTitle')
+				# elif self.the_char == ':' and self.in_question:
+				elif self.the_char == ':' and self.in_question_title:
+					self.in_question_title = False
 					self.in_question = True
 					self.next_char()
-					# question title or question
-					# first '::' precedes question title
-					# second '::' precedes actual question
-					# self.parse_question_title()
-					self.parse_element('questionTitle')
-				elif self.the_char == ':' and self.in_question:
-					self.in_question = False
-					self.next_char()
+					return True
 					# self.parse_question()
-					self.parse_element('question')
-				elif self.numeric_type and self.in_responses and self.the_char in digits:
-					# numeric range
-					raise NotImplementedError
+					# self.parse_element('question')
+				# elif self.the_char in digits and self.numeric_type and self.in_responses:
+				# 	# Should be referring to a range operator for numeric response
+				# 	self.next_char()
+				else:
+					raise GIFTValidityError("gift.parser invalid input.")
 			elif self.the_char == '{':
 				# indicates end of question
 				self.in_responses = True
@@ -1089,47 +1123,51 @@ digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
 				# self.parse_required_literal('{')
 				# return True
 				self.next_char()
+				self.skip()
 				if self.the_char == 'T' or self.the_char == 'F':
-					self.parse_element('boolean')
-			elif self.the_char == '=':
+					self.in_boolean = True
+					# self.parse_element('boolean')
+					return True
+				elif self.the_char == '#':
+					self.numeric_type = True
+					self.next_char()
+					self.skip()
+					if self.the_char in digits:
+						self.in_correct_response = True
+						return True
+						# self.parse_element('correctResponse')
+			elif self.the_char == '=' and self.in_responses:
 				# correct answer
 				self.next_char()
+				self.in_correct_response = True
 				# self.parse_correct_response()
-				self.parse_element('correctResponse')
-			elif self.the_char == '~':
+				# self.parse_element('correctResponse')
+				return True
+			elif self.the_char == '~' and self.in_responses:
 				# wrong answer
 				self.next_char()
+				self.in_wrong_response = True
+				return True
 				# self.parse_wrong_answer()
-				self.parse_element('wrongResponse')
+				# self.parse_element('wrongResponse')
 			# elif self.the_char == '#' and in_responses:
 			# 	# response to wrong answer
 			# 	self.parse_response_to_wrong_answer()
 			elif self.the_char == '}':
 				# end of question
 				self.next_char()
-				# self.in_responses = False
-				self.after_brackets = True
+				self.reset()
+				return True
 			elif self.the_char == ' ':
 				self.next_char()
-				if self.the_char == '{':
-					self.next_char()
-					while self.the_char == ' ':
-						self.next_char()
-					if self.the_char == '#':
-						self.numeric_type = True
-						self.next_char()
-					return True
 			elif self.the_char == '\n':
 				self.next_char()
-				self.after_brackets = False
-				self.numeric_type = False
-				return True
+				self.reset()
 			elif self.the_char is None:
 				# end of entity
-				self.after_brackets = False
-				self.numeric_type = False
+				self.reset()
 				return True
-			elif self.after_brackets:
+			elif self.the_char.isalnum() and self.after_brackets:
 				self.parse_element('fillintheblankRemainder')
 			else:
 				self.parse_char_data()
