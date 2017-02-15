@@ -1,5 +1,6 @@
 #! /usr/bin/env python
 import logging
+# logging.basicConfig(level=logging.DEBUG)
 
 from pyslet.gift import structures as gift
 from ..pep8 import PEP8Compatibility
@@ -305,31 +306,22 @@ class GIFTParser:
 		self.noPERefs = False
 		self.gotPERef = False
 
-		self.in_comment = False
-		self.in_question = False
-		self.parse_question_title = False
 		self.in_question_title = False
-		self.in_responses = False
-		self.in_correct_response = False
-		self.in_wrong_response = False
-		self.after_brackets = False
+		self.in_question = False
 		self.numericType = False
 		self.booleanType = False
-		self.first_response = False
+		self.in_responses = False
+		self.after_brackets = False
+		self.in_comment = False
 
 	def reset(self):
-		self.in_comment = False
-		self.in_question = False
-		self.parse_question_title = False
 		self.in_question_title = False
-		self.in_responses = False
-		self.in_correct_response = False
-		self.in_wrong_response = False
-		self.in_boolean = False
-		self.after_brackets = False
+		self.in_question = False
 		self.numericType = False
 		self.booleanType = False
-		self.first_response = False
+		self.in_responses = False
+		self.after_brackets = False
+		self.in_comment = False
 
 	def get_context(self):
 		"""Returns the parser's context
@@ -1047,14 +1039,14 @@ class GIFTParser:
 				self.in_question_title = True
 				self.parse_required_literal('::')
 				self.parse_element('questionTitle')
-				print("elif (self.the_char == ':' and not self.in_responses and not self.in_question_title)")
+				logging.debug("elif (self.the_char == ':' and not self.in_responses and not self.in_question_title)")
 			elif (self.the_char == ':' and not self.in_responses and self.in_question_title):
 				# '::' before question
 				self.in_question = True
 				self.in_question_title = False
 				self.parse_required_literal('::')
 				self.parse_element('question')
-				print("elif (self.the_char == ':' and not self.in_responses and self.in_question_title), self.the_char={}".format(self.the_char))
+				logging.debug("elif (self.the_char == ':' and not self.in_responses and self.in_question_title), self.the_char={}".format(self.the_char))
 				# return True
 			elif (self.the_char == ':' and self.in_responses):
 				if self.numericType:
@@ -1065,10 +1057,9 @@ class GIFTParser:
 						"only expect ':' in responses for numeric_type")
 			elif self.the_char == '{':
 				# denotes end of question; start of responses
-				print("elif self.the_char == '{'")
+				logging.debug("elif self.the_char == '{'")
 				self.in_responses = True
 				self.in_question = False
-				self.firstResponse = True
 				self.next_char()
 				if self.skip():
 					break
@@ -1078,10 +1069,10 @@ class GIFTParser:
 				elif self.the_char in ('=', '~', '}'):
 					# multiple choice, fill-in-the-blank, matching, or essay type
 					# do nothing
-					print("otherType")
+					logging.debug("otherType")
 					self.parse_element()
 				elif self.the_char == '#':
-					print("numericType")
+					logging.debug("numericType")
 					self.numericType = True
 					self.next_char()
 					if self.the_char.isdigit():
@@ -1090,21 +1081,14 @@ class GIFTParser:
 				else:
 					raise gift.GIFTValidityError("parse_content(): unexpected character "
 						"after '{', {}".format(self.the_char))
-				print("end of elif self.the_char == '{'")
+				logging.debug("end of elif self.the_char == '{'")
 			elif self.the_char == '=' and self.in_responses:
 				self.parse_required_literal('=')
 				self.parse_element('correctResponse')
 			elif self.the_char == '~' and self.in_responses:
-				print("elif self.the_char == '~' and self.in_responses")
+				logging.debug("elif self.the_char == '~' and self.in_responses")
 				self.parse_required_literal('~')
 				self.parse_element('wrongResponse')
-				# if self.first_response:
-				# 	self.first_response = False
-				# 	self.parse_element('wrongResponse')
-				# else:
-				# 	# self.in_correct_response = False
-				# 	self.in_wrong_reponse = True
-				# 	return True
 			elif self.the_char == '}':
 				self.in_responses = False
 				self.after_brackets = True
@@ -1119,15 +1103,15 @@ class GIFTParser:
 					self.in_comment = False
 					self.parse_element()
 			else:
-				print("before self.parse_char_data(): {}".format(self.the_char))
+				logging.debug("before self.parse_char_data(): {}".format(self.the_char))
 				self.parse_char_data()
 				return True
-				print("after self.parse_char_data(): {}".format(self.the_char))
+				logging.debug("after self.parse_char_data(): {}".format(self.the_char))
 		self.reset()
 		return True
 
 	def parse_element(self, name=None):
-		print("parse_element({})".format(name))
+		logging.debug("parse_element({})".format(name))
 		save_element = self.element
 		save_element_type = self.elementType
 		save_cursor = None
@@ -1147,12 +1131,12 @@ class GIFTParser:
 		data = []
 		while self.the_char is not None:
 			if self.in_question and self.the_char in ('{', '\n'):
-				print("if self.in_question and self.the_char in ('{', '\n')")
+				logging.debug("if self.in_question and self.the_char in ('{', '\n')")
 				break
 			elif self.numericType and self.the_char in ('{', '\n', '=', '~', '}'):
 				break
 			elif not (self.in_question or self.numericType) and self.the_char in ('{', '\n', ':', '#', '~', '=', '}'):
-				print("elif not self.in_question and self.the_char in ('{', '\n', ':', '#', '~', '=', '}')")
+				logging.debug("elif not self.in_question and self.the_char in ('{', '\n', ':', '#', '~', '=', '}')")
 				break
 			self.is_s()
 			data.append(self.the_char)
@@ -1165,7 +1149,7 @@ class GIFTParser:
 					raise
 				data = []
 		data = ''.join(data)
-		print("parse_char_data(): data={}".format(data))
+		logging.debug("parse_char_data(): data={}".format(data))
 		try:
 			self.handle_data(data.strip())
 		except gift.GIFTValidityError:

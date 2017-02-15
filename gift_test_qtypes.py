@@ -1,6 +1,6 @@
 from unittests.test_gift_parser import *
 
-# s = """//comment\n::Question title::Question{=A correct answer ~Wrong answer1}"""
+s = """//comment\n::Question title::Question{=A correct answer ~Wrong answer1}"""
 # s = """//comment\n::Question title\n::Question{\n=A correct answer\n~Wrong answer1\n~Wrong answer2\n~Wrong answer3\n}"""
 # s = """::Q1::1+1=2{T}"""
 # s = """::Q2:: What's between orange and green in the spectrum?
