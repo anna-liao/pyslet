@@ -23,6 +23,7 @@ TEST_DATA_DIR = os.path.join(
 class GIFTValidationTests(unittest.TestCase):
 
 	def test_well_formed(self):
+		# dpath = os.path.join(TEST_DATA_DIR, 'wellformed')
 		pass
 
 	def test_comment(self):
@@ -154,9 +155,15 @@ class GIFTParserTests(unittest.TestCase):
 			p.parse_misc()
 			self.assertTrue(p.the_char is None, "Short parse of Misc")
 
-	def test_element(self):
-		# s = """//comment\n"""
-		# s = "::Question title\n"
+	def test_true_false(self):
+		s = """::Q1::1+1=2{T}"""
+		with structures.GIFTEntity(s) as e:
+			p = parser.GIFTParser(e)
+			element = p.element = structures.Element("a")
+			p.parse_element()
+			children = list(element.get_children())
+
+	def test_multiple_choice(self):
 		s = """//comment\n::Question title\n::Question{\n=A correct answer\n~Wrong answer1\n~Wrong answer2\n~Wrong answer3\n}"""
 		with structures.GIFTEntity(s) as e:
 			p = parser.GIFTParser(e)
@@ -172,7 +179,7 @@ class GIFTParserTests(unittest.TestCase):
 			self.assertTrue(children[1].get_value() == "Question", "Second element value: %s" % repr(children[1].get_value()))
 			self.assertTrue(isinstance(children[2], structures.Element), "Third element: %s" % repr(children[2]))
 			self.assertTrue(children[2].giftname == 'correctResponse', "Third element name: %s" % repr(children[2].giftname))
-			self.assertTrue(children[2].get_value() == 'A correct answer', "Third element value: %s" % repr(children[3].get_value()))
+			self.assertTrue(children[2].get_value() == 'A correct answer', "Third element value: %s" % repr(children[2].get_value()))
 			self.assertTrue(isinstance(children[3], structures.Element), "Fourth element: %s" % repr(children[3]))
 			self.assertTrue(children[3].giftname == 'wrongResponse', "Fourth element name: %s" % repr(children[3].giftname))
 			self.assertTrue(children[3].get_value() == "Wrong answer1", "Fourth element value: %s" % repr(children[3].get_value()))
@@ -184,10 +191,142 @@ class GIFTParserTests(unittest.TestCase):
 			self.assertTrue(children[5].giftname == 'wrongResponse', "Sixth element name: %s" % repr(children[5].giftname))
 			self.assertTrue(children[5].get_value() == "Wrong answer3", "Sixth element value: %s" % repr(children[5].get_value()))
 
-	# def test_empty_question(self):
-	# 	empty_q = ":: Question title :: Question {}"
-	# 	p = parser.GIFTParser(e)
-	# 	pstr = p.parse_comment()
+	def test_multiple_choice_no_linebreaks_qtext(self):
+		s = """//comment\n::Question title::Question{=A correct answer ~Wrong answer1}"""
+		with structures.GIFTEntity(s) as e:
+			p = parser.GIFTParser(e)
+			element = p.element = structures.Element("a")
+			p.parse_element()
+			children = list(element.get_children())
+			self.assertTrue(len(children) == 4, "Number of children: %i" % len(children))
+			self.assertTrue(isinstance(children[0], structures.Element), "First element: %s" % repr(children[0]))
+			self.assertTrue(children[0].giftname == 'questionTitle', "First element name: %s" % repr(children[0].giftname))
+			self.assertTrue(children[0].get_value() == 'Question title', "First element value: %s" % repr(children[0].get_value()))
+
+			self.assertTrue(isinstance(children[1], structures.Element), "Second element: %s" % repr(children[1]))
+			self.assertTrue(children[1].giftname == 'question', "Second element name: %s" % repr(children[1].giftname))
+			self.assertTrue(children[1].get_value() == 'Question', "Second element value: %s" % repr(children[1].get_value()))
+
+			self.assertTrue(isinstance(children[2], structures.Element), "Third element: %s" % repr(children[2]))
+			self.assertTrue(children[2].giftname == 'correctResponse', "Third element name: %s" % repr(children[2].giftname))
+			self.assertTrue(children[2].get_value() == 'A correct answer', "Third element value: %s" % repr(children[2].get_value()))
+
+			self.assertTrue(isinstance(children[3], structures.Element), "Fourth element: %s" % repr(children[3]))
+			self.assertTrue(children[3].giftname == 'wrongResponse', "Fourth element name: %s" % repr(children[3].giftname))
+			self.assertTrue(children[3].get_value() == 'Wrong answer1', "Fourth element value: %s" % repr(children[3].get_value()))
+
+	def test_true_false(self):
+		s = """::Q1::1+1=2{T}"""
+		with structures.GIFTEntity(s) as e:
+			p = parser.GIFTParser(e)
+			element = p.element = structures.Element("a")
+			p.parse_element()
+			children = list(element.get_children())
+			self.assertTrue(len(children) == 3, "Number of children: %i" % len(children))
+			self.assertTrue(isinstance(children[0], structures.Element), "First element: %s" % repr(children[0]))
+			self.assertTrue(children[0].giftname == 'questionTitle', "First element name: %s" % repr(children[0].giftname))
+			self.assertTrue(children[0].get_value() == 'Q1', "First element value: %s" % repr(children[0].get_value()))
+
+			self.assertTrue(isinstance(children[1], structures.Element), "Second element: %s" % repr(children[1]))
+			self.assertTrue(children[1].giftname == 'question', "Second element name: %s" % repr(children[1].giftname))
+			self.assertTrue(children[1].get_value() == '1+1=2', "Second element value: %s" % repr(children[1].get_value()))
+
+			self.assertTrue(isinstance(children[2], structures.Element), "Third element: %s" % repr(children[2]))
+			self.assertTrue(children[2].giftname == 'boolean', "Third element name: %s" % repr(children[2].giftname))
+			self.assertTrue(children[2].get_value() == 'T', "Third element value: %s" % repr(children[2].get_value()))
+
+	def test_fill_in_the_blank(self):
+		s = """::Q3:: Two plus {=two =2} equals four."""
+		with structures.GIFTEntity(s) as e:
+			p = parser.GIFTParser(e)
+			element = p.element = structures.Element("a")
+			p.parse_element()
+			children = list(element.get_children())
+			self.assertTrue(len(children) == 5, "Number of children: %i" % len(children))
+			self.assertTrue(isinstance(children[0], structures.Element), "First element: %s" % repr(children[0]))
+			self.assertTrue(children[0].giftname == 'questionTitle', "First element name: %s" % repr(children[0].giftname))
+			self.assertTrue(children[0].get_value() == 'Q3', "First element value: %s" % repr(children[0].get_value()))
+
+			self.assertTrue(isinstance(children[1], structures.Element), "Second element: %s" % repr(children[1]))
+			self.assertTrue(children[1].giftname == 'question', "Second element name: %s" % repr(children[1].giftname))
+			self.assertTrue(children[1].get_value() == 'Two plus', "Second element value: %s" % repr(children[1].get_value()))
+
+			self.assertTrue(isinstance(children[2], structures.Element), "Third element: %s" % repr(children[2]))
+			self.assertTrue(children[2].giftname == 'correctResponse', "Third element name: %s" % repr(children[2].giftname))
+			self.assertTrue(children[2].get_value() == 'two', "Third element value: %s" % repr(children[2].get_value()))
+
+			self.assertTrue(isinstance(children[3], structures.Element), "Fourth element: %s" % repr(children[3]))
+			self.assertTrue(children[3].giftname == 'correctResponse', "Fourth element name: %s" % repr(children[3].giftname))
+			self.assertTrue(children[3].get_value() == '2', "Fourth element value: %s" % repr(children[3].get_value()))
+
+			self.assertTrue(isinstance(children[4], structures.Element), "Fifth element: %s" % repr(children[4]))
+			self.assertTrue(children[4].giftname == 'aftertheblank', "Fifth element name: %s" % repr(children[4].giftname))
+			self.assertTrue(children[4].get_value() == 'equals four.', "Fifth element value: %s" % repr(children[4].get_value()))
+
+	def test_matching(self):
+		s = """::Q4:: Which animal eats which food? { =cat -> cat food =dog -> dog food }"""
+		with structures.GIFTEntity(s) as e:
+			p = parser.GIFTParser(e)
+			element = p.element = structures.Element("a")
+			p.parse_element()
+			children = list(element.get_children())
+			self.assertTrue(len(children) == 4, "Number of children: %i" % len(children))
+			self.assertTrue(isinstance(children[0], structures.Element), "First element: %s" % repr(children[0]))
+			self.assertTrue(children[0].giftname == 'questionTitle', "First element name: %s" % repr(children[0].giftname))
+			self.assertTrue(children[0].get_value() == 'Q4', "First element value: %s" % repr(children[0].get_value()))
+
+			self.assertTrue(isinstance(children[1], structures.Element), "Second element: %s" % repr(children[1]))
+			self.assertTrue(children[1].giftname == 'question', "Second element name: %s" % repr(children[1].giftname))
+			self.assertTrue(children[1].get_value() == 'Which animal eats which food?', "Second element value: %s" % repr(children[1].get_value()))
+
+			self.assertTrue(isinstance(children[2], structures.Element), "Third element: %s" % repr(children[2]))
+			self.assertTrue(children[2].giftname == 'correctResponse', "Third element name: %s" % repr(children[2].giftname))
+			self.assertTrue(children[2].get_value() == 'cat -> cat food', "Third element value: %s" % repr(children[2].get_value()))
+
+			self.assertTrue(isinstance(children[3], structures.Element), "Fourth element: %s" % repr(children[3]))
+			self.assertTrue(children[3].giftname == 'correctResponse', "Fourth element name: %s" % repr(children[3].giftname))
+			self.assertTrue(children[3].get_value() == 'dog -> dog food', "Fourth element value: %s" % repr(children[3].get_value()))
+
+	def test_numeric_range(self):
+		s = """::Q5:: What is a number from 1 to 5? {#3:2}"""
+		with structures.GIFTEntity(s) as e:
+			p = parser.GIFTParser(e)
+			element = p.element = structures.Element("a")
+			p.parse_element()
+			children = list(element.get_children())
+			self.assertTrue(len(children) == 3, "Number of children: %i" % len(children))
+			self.assertTrue(isinstance(children[0], structures.Element), "First element: %s" % repr(children[0]))
+			self.assertTrue(children[0].giftname == 'questionTitle', "First element name: %s" % repr(children[0].giftname))
+			self.assertTrue(children[0].get_value() == 'Q5', "First element value: %s" % repr(children[0].get_value()))
+
+			self.assertTrue(isinstance(children[1], structures.Element), "Second element: %s" % repr(children[1]))
+			self.assertTrue(children[1].giftname == 'question', "Second element name: %s" % repr(children[1].giftname))
+			self.assertTrue(children[1].get_value() == 'What is a number from 1 to 5?', "Second element value: %s" % repr(children[1].get_value()))
+
+			self.assertTrue(isinstance(children[2], structures.Element), "Third element: %s" % repr(children[2]))
+			self.assertTrue(children[2].giftname == 'correctResponse', "Third element name: %s" % repr(children[2].giftname))
+			self.assertTrue(children[2].get_value() == '3:2', "Third element value: %s" % repr(children[2].get_value()))
+
+	def test_alt_numeric_range(self):
+		s = """::Q6:: What is a number from 1 to 5? {#1..5}"""
+		with structures.GIFTEntity(s) as e:
+			p = parser.GIFTParser(e)
+			element = p.element = structures.Element("a")
+			p.parse_element()
+			children = list(element.get_children())
+			self.assertTrue(len(children) == 3, "Number of children: %i" % len(children))
+			self.assertTrue(isinstance(children[0], structures.Element), "First element: %s" % repr(children[0]))
+			self.assertTrue(children[0].giftname == 'questionTitle', "First element name: %s" % repr(children[0].giftname))
+			self.assertTrue(children[0].get_value() == 'Q6', "First element value: %s" % repr(children[0].get_value()))
+
+			self.assertTrue(isinstance(children[1], structures.Element), "Second element: %s" % repr(children[1]))
+			self.assertTrue(children[1].giftname == 'question', "Second element name: %s" % repr(children[1].giftname))
+			self.assertTrue(children[1].get_value() == 'What is a number from 1 to 5?', "Second element value: %s" % repr(children[1].get_value()))
+
+			self.assertTrue(isinstance(children[2], structures.Element), "Third element: %s" % repr(children[2]))
+			self.assertTrue(children[2].giftname == 'correctResponse', "Third element name: %s" % repr(children[2].giftname))
+			self.assertTrue(children[2].get_value() == '1..5', "Third element value: %s" % repr(children[2].get_value()))
+
 
 if __name__ == "__main__":
 	logging.basicConfig(level=logging.DEBUG)

@@ -434,24 +434,25 @@ class DocumentTests(unittest.TestCase):
 	# Document object instantiated with no root specified or d.read()
 	# Need to implement parser still.
 
+	# Problem with this test is parser.parse_element() needs to be modified.
+	# self.element is empty.  perhaps document.read() needs to add a root element.
 	# def test_read_string(self):
 	# 	"""Test the reading of the Document from a supplied stream"""
 	# 	os.chdir(TEST_DATA_DIR)
 	# 	d = structures.Document(base_uri='readFile.txt')
-	# 	f = open('readFile.txt', 'rb')
-	# 	d.read(src=f)
-	# 	f.close()
+	# 	with open('readFile.txt', 'rb') as f:
+	# 		d.read(src=f)
 	# 	root = d.root
 	# 	self.assertTrue(isinstance(root, structures.Element))
-	# 	self.assertTrue(root.giftname == 'tag' and root.get_value() == 'Hello World')
+		# self.assertTrue(root.giftname == 'root' and root.get_value() == 'Hello World')
+		# ISSUE: tree only contains last element in file.  tree insert and traversal not working
 
 	# def test_string(self):
 	# 	os.chdir(TEST_DATA_DIR)
 	# 	d = structures.Document(base_uri='readFile.txt')
 	# 	d.read()
-	# 	f = open('readFile.txt', 'rb')
-	# 	flines = f.read().splitlines()
-	# 	f.close()
+	# 	with open('readFile.txt', 'rb') as f:
+	# 		flines = f.read().splitlines()
 	# 	# bytes always formats using unix-style newlines
 	# 	# dlines = bytes(d).split(b'\n')
 	# 	dlines = bytes(d)

@@ -1,1 +1,8 @@
-//Hello World
+//comment line
+::Question title
+::Question{
+=A correct answer
+~Wrong answer1
+~Wrong answer2
+~Wrong answer3
+}
