@@ -304,8 +304,6 @@ class GIFTParser:
 		self.dataCount = 0
 		self.noPERefs = False
 		self.gotPERef = False
-
-		self.in_comment = False
 		self.in_question = False
 		self.parse_question_title = False
 		self.in_question_title = False
@@ -315,10 +313,8 @@ class GIFTParser:
 		self.after_brackets = False
 		self.numericType = False
 		self.booleanType = False
-		self.first_response = False
 
 	def reset(self):
-		self.in_comment = False
 		self.in_question = False
 		self.parse_question_title = False
 		self.in_question_title = False
@@ -329,7 +325,6 @@ class GIFTParser:
 		self.after_brackets = False
 		self.numericType = False
 		self.booleanType = False
-		self.first_response = False
 
 	def get_context(self):
 		"""Returns the parser's context
@@ -748,11 +743,7 @@ class GIFTParser:
 		"""
 		data = []
 		while self.the_char is not None:
-			if self.in_question and self.the_char in ('{', '\n'):
-				print("if self.in_question and self.the_char in ('{', '\n')")
-				break
-			elif not self.in_question and self.the_char in ('{', '\n', ':', '#', '~', '=', '}'):
-				print("elif not self.in_question and self.the_char in ('{', '\n', ':', '#', '~', '=', '}')")
+			if self.the_char in ['{', '\n']:
 				break
 			self.is_s()
 			data.append(self.the_char)
@@ -765,7 +756,6 @@ class GIFTParser:
 					raise
 				data = []
 		data = ''.join(data)
-		print("parse_char_data(): data={}".format(data))
 		try:
 			self.handle_data(data)
 		except gift.GIFTValidityError:
@@ -1053,120 +1043,86 @@ class GIFTParser:
 	def parse_content(self):
 		while self.the_char is not None:
 			if self.the_char == '/':
-				self.in_comment = True
 				self.parse_required_literal('//')
 				self.parse_comment(True)
 				# There is always a '\n' after a comment, otherwise the whole line is a comment
-			# elif self.in_question:
-			# 	# self.parse_required_literal('::')
-			# 	self.in_question = False
-			# 	self.parse_element('question')
-			# elif self.booleanType:
-			# 	self.booleanType = False
-			# 	self.parse_element('boolean')
-			# elif self.in_correct_response:
-			# 	self.in_correct_response = False
-			# 	self.parse_element('correctResponse')
-			# elif self.in_wrong_response:
-			# 	self.in_wrong_response = False
-			# 	self.parse_element('wrongResponse')
+			elif (self.the_char == ':' and not self.in_responses and self.in_question):
+				# '::' before question
+				self.parse_required_literal('::')
+				self.parse_element('question')
 			elif (self.the_char == ':' and not self.in_responses and not self.in_question_title):
 				# '::' before question title
 				self.in_question_title = True
 				self.parse_required_literal('::')
 				self.parse_element('questionTitle')
-				print("elif (self.the_char == ':' and not self.in_responses and not self.in_question_title)")
 			elif (self.the_char == ':' and not self.in_responses and self.in_question_title):
-				# '::' before question
 				self.in_question = True
 				self.in_question_title = False
-				self.parse_required_literal('::')
-				self.parse_element('question')
-				print("elif (self.the_char == ':' and not self.in_responses and self.in_question_title), self.the_char={}".format(self.the_char))
-				# return True
+				return True
 			elif (self.the_char == ':' and self.in_responses):
 				if self.numericType:
 					# this is valid; denotes a range
 					self.next_char()
 				else:
-					raise gift.GIFTValidityError("parse_content(): invalid input, "
+					raise GIFTValidityError("parse_content(): invalid input, "
 						"only expect ':' in responses for numeric_type")
-			elif self.the_char == '{':
+			elif (self.the_char == '{' and not self.in_responses):
 				# denotes end of question; start of responses
-				print("elif self.the_char == '{'")
 				self.in_responses = True
 				self.in_question = False
-				self.firstResponse = True
-				self.next_char()
 				self.skip()
 				if self.the_char in ('T', 'F'):
 					self.booleanType = True
-					self.parse_element('boolean')
 				elif self.the_char in ('=', '~', '}'):
 					# multiple choice, fill-in-the-blank, matching, or essay type
 					# do nothing
-					print("otherType")
-					self.parse_element()
+					pass
 				elif self.the_char == '#':
-					print("numericType")
 					self.numericType = True
 					self.next_char()
 					if self.the_char.isdigit():
-						# self.in_correct_response = True
-						self.parse_element('correctResponse')
+						self.in_correct_response = True
 				else:
-					raise gift.GIFTValidityError("parse_content(): unexpected character "
+					raise GIFTValidityError("parse_content(): unexpected character "
 						"after '{', {}".format(self.the_char))
-				print("end of elif self.the_char == '{'")
+				return True
+			elif self.booleanType:
+				self.parse_element('boolean')
 			elif self.the_char == '=' and self.in_responses:
-				self.parse_required_literal('=')
+				self.in_correct_response = True
+				self.next_char()
+				return True
+			elif self.in_correct_response:
+				self.in_correct_response = False
 				self.parse_element('correctResponse')
 			elif self.the_char == '~' and self.in_responses:
-				print("elif self.the_char == '~' and self.in_responses")
-				self.parse_required_literal('~')
+				self.in_wrong_reponse = True
+				self.next_char()
+				return True
+			elif self.in_wrong_response:
+				self.in_wrong_response = False
 				self.parse_element('wrongResponse')
-				# if self.first_response:
-				# 	self.first_response = False
-				# 	self.parse_element('wrongResponse')
-				# else:
-				# 	# self.in_correct_response = False
-				# 	self.in_wrong_reponse = True
-				# 	return True
 			elif self.the_char == '}':
 				self.in_responses = False
 				self.after_brackets = True
-				self.parse_required_literal('}')
-				# self.next_char()
-				# return True
+				self.next_char()
+				return True
 			elif self.the_char.isalnum() and self.after_brackets:
 				self.parse_element('aftertheblank')
 			elif self.the_char == '\n':
 				self.next_char()
-				if self.in_comment:
-					self.in_comment = False
-					self.parse_element()
-			else:
-				print("before self.parse_char_data(): {}".format(self.the_char))
-				self.parse_char_data()
 				return True
-				print("after self.parse_char_data(): {}".format(self.the_char))
+			else:
+				self.parse_char_data()
 		self.reset()
 		return True
 
 	def parse_element(self, name=None):
-		print("parse_element({})".format(name))
-		save_element = self.element
-		save_element_type = self.elementType
-		save_cursor = None
-		if name:
-			context = self.get_context()
-			self.element = context.add_child(gift.Element, name)
+		if not name:
+			self.parse_content()
+		context = self.get_context()
+		self.element = context.add_child(gift.Element, name)
 		self.parse_content()
-		# self.element.content_changed()
-		self.element = save_element
-		self.elementType = save_element_type
-		self.cursor = save_cursor
-		return True
 
 	def handle_data(self, data):
 		"""[43] content

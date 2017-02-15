@@ -1,8 +1,8 @@
 from unittests.test_gift_parser import *
 
 # s = """::Q1::1+1=2{T}"""
-# s = """//comment::Question title::Question{=A correct answer ~Wrong answer1}"""
-s = """//comment\n::Question title\n::Question{\n=A correct answer\n~Wrong answer1\n}"""
+# s = """//comment\n::Question title::Question{=A correct answer ~Wrong answer1}"""
+s = """//comment\n::Question title\n::Question{\n=A correct answer\n~Wrong answer1\n~Wrong answer2\n~Wrong answer3\n}"""
 e = structures.GIFTEntity(s)
 p = parser.GIFTParser(e)
 element = p.element = structures.Element("a")

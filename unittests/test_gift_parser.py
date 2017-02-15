@@ -181,7 +181,7 @@ class GIFTParserTests(unittest.TestCase):
 			self.assertTrue(children[1].get_value() == "Question", "Second element value: %s" % repr(children[1].get_value()))
 			self.assertTrue(isinstance(children[2], structures.Element), "Third element: %s" % repr(children[2]))
 			self.assertTrue(children[2].giftname == 'correctResponse', "Third element name: %s" % repr(children[2].giftname))
-			self.assertTrue(children[2].get_value() == 'A correct answer', "Third element value: %s" % repr(children[3].get_value()))
+			self.assertTrue(children[2].get_value() == 'A correct answer', "Third element value: %s" % repr(children[2].get_value()))
 			self.assertTrue(isinstance(children[3], structures.Element), "Fourth element: %s" % repr(children[3]))
 			self.assertTrue(children[3].giftname == 'wrongResponse', "Fourth element name: %s" % repr(children[3].giftname))
 			self.assertTrue(children[3].get_value() == "Wrong answer1", "Fourth element value: %s" % repr(children[3].get_value()))
