@@ -743,35 +743,6 @@ class GIFTParser:
 		Not relevant for GIFT format."""
 		raise NotImplementedError
 
-	def parse_char_data(self):
-		"""Parses a run of character data, and adds parsed data to current element.
-		"""
-		data = []
-		while self.the_char is not None:
-			if self.in_question and self.the_char in ('{', '\n'):
-				print("if self.in_question and self.the_char in ('{', '\n')")
-				break
-			elif not self.in_question and self.the_char in ('{', '\n', ':', '#', '~', '=', '}'):
-				print("elif not self.in_question and self.the_char in ('{', '\n', ':', '#', '~', '=', '}')")
-				break
-			self.is_s()
-			data.append(self.the_char)
-			self.next_char()
-			if len(data) >= gift.GIFTEntity.chunk_size:
-				data = ''.join(data)
-				try:
-					self.handle_data(data)
-				except gift.GIFTValidityError:
-					raise
-				data = []
-		data = ''.join(data)
-		print("parse_char_data(): data={}".format(data))
-		try:
-			self.handle_data(data)
-		except gift.GIFTValidityError:
-			raise
-		return None
-
 	def parse_comment(self, got_literal=False):
 		"""[15] Comment
 
@@ -1049,6 +1020,7 @@ class GIFTParser:
 	def skip(self):
 		while self.the_char in ('\n', ' '):
 			self.next_char()
+		return not self.the_char
 
 	def parse_content(self):
 		while self.the_char is not None:
@@ -1098,7 +1070,8 @@ class GIFTParser:
 				self.in_question = False
 				self.firstResponse = True
 				self.next_char()
-				self.skip()
+				if self.skip():
+					break
 				if self.the_char in ('T', 'F'):
 					self.booleanType = True
 					self.parse_element('boolean')
@@ -1136,10 +1109,10 @@ class GIFTParser:
 				self.in_responses = False
 				self.after_brackets = True
 				self.parse_required_literal('}')
-				# self.next_char()
-				# return True
-			elif self.the_char.isalnum() and self.after_brackets:
-				self.parse_element('aftertheblank')
+				if self.skip():
+					break
+				if self.the_char.isalnum():
+					self.parse_element('aftertheblank')
 			elif self.the_char == '\n':
 				self.next_char()
 				if self.in_comment:
@@ -1167,6 +1140,37 @@ class GIFTParser:
 		self.elementType = save_element_type
 		self.cursor = save_cursor
 		return True
+
+	def parse_char_data(self):
+		"""Parses a run of character data, and adds parsed data to current element.
+		"""
+		data = []
+		while self.the_char is not None:
+			if self.in_question and self.the_char in ('{', '\n'):
+				print("if self.in_question and self.the_char in ('{', '\n')")
+				break
+			elif self.numericType and self.the_char in ('{', '\n', '=', '~', '}'):
+				break
+			elif not (self.in_question or self.numericType) and self.the_char in ('{', '\n', ':', '#', '~', '=', '}'):
+				print("elif not self.in_question and self.the_char in ('{', '\n', ':', '#', '~', '=', '}')")
+				break
+			self.is_s()
+			data.append(self.the_char)
+			self.next_char()
+			if len(data) >= gift.GIFTEntity.chunk_size:
+				data = ''.join(data)
+				try:
+					self.handle_data(data)
+				except gift.GIFTValidityError:
+					raise
+				data = []
+		data = ''.join(data)
+		print("parse_char_data(): data={}".format(data))
+		try:
+			self.handle_data(data.strip())
+		except gift.GIFTValidityError:
+			raise
+		return None
 
 	def handle_data(self, data):
 		"""[43] content
