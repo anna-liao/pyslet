@@ -1946,6 +1946,7 @@ class Document(Node):
 		super(Document, self).__init__()
 		# base_uri = kws.get('baseURI', base_uri)
 		self.base_uri = None
+		self.dtd = None
 		self.root = None
 		"""The root element or None if no root element has been created yet.
 		"""
@@ -1961,6 +1962,10 @@ class Document(Node):
 				raise ValueError
 			else:
 				self.root = root(self)
+		# this will break document constructor unittest.  There should only be a root if one is input.
+		# else:
+		# 	self.root = Element("root")
+		# 	self.root.attach_to_doc(self)
 		self.set_base(base_uri)
 		self.idTable = {}
 
@@ -2023,15 +2028,24 @@ class Document(Node):
 		Unlike :meth:`Element.add_child` there are no model customization options.  The
 		root element is always found at :attr:`root`.
 		"""
+		# if self.root:
+		# 	self.root.detach_from_doc()
+		# 	self.root.parent = None
+		# 	self.root = None
+		# child = child_class(self)
+		# if name:
+		# 	child.set_giftname(name)
+		# self.root = child
+		# return self.root
 		if self.root:
-			self.root.detach_from_doc()
-			self.root.parent = None
-			self.root = None
-		child = child_class(self)
-		if name:
-			child.set_giftname(name)
-		self.root = child
-		return self.root
+			child = self.root.add_child(child_class, name)
+			return child
+		else:
+			child = child_class(self)
+			if name:
+				child.set_giftname(name)
+			self.root = child
+			return self.root
 
 	def set_base(self, base_uri):
 		"""Sets the base_uri of the document to the given URI.
@@ -2069,8 +2083,7 @@ class Document(Node):
 		Derived documents can override this behaviour to return either "preserve"
 		or "default" to affect space handling.
 		"""
-		# raise NotImplementedError
-		return None
+		raise NotImplementedError
 
 	def validation_error(self, msg, element, data=None, aname=None):
 		"""Called when a validation error is triggered.

@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 import logging
-# logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG)
 
 from pyslet.gift import structures as gift
 from ..pep8 import PEP8Compatibility
@@ -210,7 +210,7 @@ class GIFTParser:
 			the optional system ID of hte doctype, if None or omitted (the usual case)
 			the document class can match any system ID.
 		"""
-		raise NotImplementedError
+		cls._doc_class_table[(root_name, public_id, system_id)] = doc_class
 
 	#: Default constant used for setting :py:attr:`refMode`
 	RefModeNone = 0
@@ -292,16 +292,18 @@ class GIFTParser:
 			self.the_char = None
 		self.buff = []
 		#: The document being parsed
+		self.dtd = None
 		self.doc = None
 		#: The document entity
 		self.docEntity = entity
 		#: The current element being parsed
+		# self.element = None
 		self.element = None
 		#: The element type of the current element
-		self.elementType = None
+		self.elementType = gift.Element
 		self.idTable = {}
 		self.idRefTable = {}
-		self.cursor = None
+		self.cursor = ContentParticleCursor(gift.Element)
 		self.dataCount = 0
 		self.noPERefs = False
 		self.gotPERef = False
@@ -614,32 +616,33 @@ class GIFTParser:
 		"""
 		self.refMode == GIFTParser.RefModeInContent
 		self.doc = doc
-		if self.checkAllErrors:
-			self.checkCompatibility = True
-		if self.checkCompatibility:
-			self.check_validity = True
-		if self.check_validity:
-			self.valid = True
-		else:
-			self.valid = None
+
+		# if self.checkAllErrors:
+		# 	self.checkCompatibility = True
+		# if self.checkCompatibility:
+		# 	self.check_validity = True
+		# if self.check_validity:
+		# 	self.valid = True
+		# else:
+		# 	self.valid = None
 		self.nonFatalErrors = []
 		# self.parse_prolog()
-		if self.doc is None:
-			if self.dtd.name is not None:
-				# create the document based on information in the DTD
-				self.doc = self.get_document_class(self.dtd)()
-				# set the document's dtd
-				self.doc.dtd = self.dtd
-		elif self.doc.dtd is None:
-			# override the document's DTD
-			self.doc.dtd = self.dtd
-		# self.parse_element()
-		self.parse_content()
-		if self.check_validity:
-			for idref in dict_keys(self.idRefTable):
-				if idref not in self.idTable:
-					self.validity_error("IDREF: %s does not match any ID attribute value")
+		# if self.doc is None:
+		# 	if self.dtd.name is not None:
+		# 		# create the document based on information in the DTD
+		# 		self.doc = self.get_document_class(self.dtd)()
+		# 		# set the document's dtd
+		# 		self.doc.dtd = self.dtd
+		# elif self.doc.dtd is None:
+		# 	# override the document's DTD
+		# 	self.doc.dtd = self.dtd
+		while self.the_char is not None:
+			self.parse_element()
 		# self.parse_misc()
+		# if self.check_validity:
+		# 	for idref in dict_keys(self.idRefTable):
+		# 		if idref not in self.idTable:
+		# 			self.validity_error("IDREF: %s does not match any ID attribute value")
 		if self.the_char is not None and not self.dont_check_wellformedness:
 			self.well_formedness_error("Unparsed characters in entity after document: %s" %
 				repr(self.the_char))
@@ -760,53 +763,6 @@ class GIFTParser:
 				self.next_char()
 		return ''.join(data)
 
-	control_chars = ('~', '=', '#', '}')
-
-
-	def parse_question_title(self, got_literal=False):
-		""" ::Question title::
-		"""
-		raise NotImplementedError
-		# production = "Question Title"
-		# save_element =
-		# data = []
-		# if not got_literal:
-		# 	self.parse_required_literal('::', production)
-		# while self.the_char is not None:
-		# 	if self.the_char in control_chars:
-		# 		self.next_char()
-		# 		break
-		# 	else:
-		# 		data.append(self.the_char)
-		# 		self.next_char()
-		# return ''.join(data)
-
-	def parse_question(self, got_literal=False):
-		raise NotImplementedError
-
-	def parse_correct_response(self, got_literal=False):
-		raise NotImplementedError
-
-	def parse_wrong_response(self, got_literal=False):
-		raise NotImplementedError
-
-	def parse_response_to_wrong_answer(self, got_literal=False):
-		raise NotImplementedError
-
-	def parse_pi(self):
-		# parsing a processing instruction in xml, denoted with '<?' literal
-		# I couldn't find the '<?' in a few of the simple qti xml examples.
-		# Assume not relevant for GIFT.
-		raise NotImplementedError
-
-	def parse_prolog(self):
-		# not relevant for GIFT documents
-		raise NotImplementedError
-
-	def parse_decl(self, got_literal=False):
-		# not relevant for XML documents
-		raise NotImplementedError
-
 	def parse_misc(self):
 		"""[27] Misc
 
@@ -892,123 +848,6 @@ class GIFTParser:
 		# self.parse_s()
 		return
 
-	def parse_content_new(self):
-		"""
-		::Q1:: 1+1=2 {T}
-		
-		::Q2:: What's between orange and green in the spectrum?
-		{ =yellow # right; good! ~red # wrong, it's yellow ~blue # wrong, it's yellow }
-
-		::Q3:: Two plus {=two =2} equals four.
-
-		::Q4:: Which animal eats which food? { =cat -> cat food =dog -> dog food }
-
-		::Q5:: What is a number from 1 to 5? {#3:2}
-
-		::Q6:: What is a number from 1 to 5? {#1..5}
-
-		::Q7:: When was Ulysses S. Grant born? {#
-        =1822:0      # Correct! Full credit.
-        =%50%1822:2  # He was born in 1822. Half credit for being close.
-		}
-
-		::Q8:: How are you? {}
-
-		The format changes after the question title (after the second set of ::).  Buffer all the text after that,
-		and then determine which type it is.
-		"""
-		while True:
-			if isinstance(self.the_char, int):
-				self.the_char = chr(self.the_char)
-			if self.the_char == '/':
-				self.parse_require_literal('//')
-				self.parse_comment(True)
-			elif self.the_char == ':':
-				self.next_char()
-				if self.the_char == ':' and not self.in_question:
-					self.in_question = True
-					self.next_char()
-					self.parse_element('questionTitle')
-				else:
-					self.in_question = False
-					self.process_question()
-			elif self.the_char == '\n':
-				self.next_char()
-				return True
-			elif self.the_char is None:
-				# end of entity
-				return True
-			else:
-				self.parse_char_data()
-		return True
-
-	def process_question(self):
-		"""
-		::Q1:: 1+1=2 {T}
-		
-		::Q2:: What's between orange and green in the spectrum?
-		{ =yellow # right; good! ~red # wrong, it's yellow ~blue # wrong, it's yellow }
-
-		::Q3:: Two plus {=two =2} equals four.
-		# Maybe same as QTI inline choice: https://www.imsglobal.org/question/qtiv2p2/examples/items/inline_choice.xml
-
-		::Q4:: Which animal eats which food? { =cat -> cat food =dog -> dog food }
-
-		::Q5:: What is a number from 1 to 5? {#3:2}
-
-		::Q6:: What is a number from 1 to 5? {#1..5}
-
-		::Q7:: When was Ulysses S. Grant born? {#
-        =1822:0      # Correct! Full credit.
-        =%50%1822:2  # He was born in 1822. Half credit for being close.
-		}
-
-		::Q8:: How are you? {}
-		"""
-		data = []
-		in_brackets = False
-		after_brackets = False
-		qtype = None
-		while self.the_char is not None:
-			if self.the_char == '{':
-				in_brackets = True
-				data.append(self.the_char)
-				self.next_char()
-				if self.the_char == '#':
-					if not qtype:
-						qtype = 'numeric'
-					else:
-						raise gift.GIFTFatalError("Parsing error: qtype already assigned, %s" % qtype)
-			elif self.the_char == '}':
-				in_brackets = False
-				after_brackets = True
-			elif in_brackets and self.the_char in ('T', 'F'):
-				if not qtype:
-					qtype = 'truefalse'
-				else:
-					raise gift.GIFTFatalError("Parsing error: qtype already assigned, %s" % qtype)
-			elif after_brackets and self.the_char not in (' ', None):
-				if not qtype:
-					qtype = 'fillintheblank'
-				else:
-					raise gift.GIFTFatalError("Parsing error: qtype already assigned, %s" % qtype)
-			elif in_brackets and self.the_char == '-':
-				data.append(self.the_char)
-				self.next_char()
-				if self.the_char == '>':
-					if not qtype:
-						qtype = 'matching'
-					else:
-						raise gift.GIFTFatalError("Parsing error: qtype already assigned, %s" % qtype)
-			data.append(self.the_char)
-			self.next_char()
-
-		# if qtype is None, assume it is multiple choice
-		for c in data:
-			raise NotImplementedError
-
-	digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
-
 	def skip(self):
 		while self.the_char in ('\n', ' '):
 			self.next_char()
@@ -1039,14 +878,14 @@ class GIFTParser:
 				self.in_question_title = True
 				self.parse_required_literal('::')
 				self.parse_element('questionTitle')
-				logging.debug("elif (self.the_char == ':' and not self.in_responses and not self.in_question_title)")
+				logging.debug("elif (self.the_char == ':' and not self.in_responses and not self.in_question_title)\n")
 			elif (self.the_char == ':' and not self.in_responses and self.in_question_title):
 				# '::' before question
 				self.in_question = True
 				self.in_question_title = False
 				self.parse_required_literal('::')
 				self.parse_element('question')
-				logging.debug("elif (self.the_char == ':' and not self.in_responses and self.in_question_title), self.the_char={}".format(self.the_char))
+				logging.debug("elif (self.the_char == ':' and not self.in_responses and self.in_question_title), self.the_char={}\n".format(self.the_char))
 				# return True
 			elif (self.the_char == ':' and self.in_responses):
 				if self.numericType:
@@ -1057,7 +896,7 @@ class GIFTParser:
 						"only expect ':' in responses for numeric_type")
 			elif self.the_char == '{':
 				# denotes end of question; start of responses
-				logging.debug("elif self.the_char == '{'")
+				logging.debug("elif self.the_char == '{'\n")
 				self.in_responses = True
 				self.in_question = False
 				self.next_char()
@@ -1069,10 +908,10 @@ class GIFTParser:
 				elif self.the_char in ('=', '~', '}'):
 					# multiple choice, fill-in-the-blank, matching, or essay type
 					# do nothing
-					logging.debug("otherType")
+					logging.debug("otherType\n")
 					self.parse_element()
 				elif self.the_char == '#':
-					logging.debug("numericType")
+					logging.debug("numericType\n")
 					self.numericType = True
 					self.next_char()
 					if self.the_char.isdigit():
@@ -1081,12 +920,12 @@ class GIFTParser:
 				else:
 					raise gift.GIFTValidityError("parse_content(): unexpected character "
 						"after '{', {}".format(self.the_char))
-				logging.debug("end of elif self.the_char == '{'")
+				logging.debug("end of elif self.the_char == '{'\n")
 			elif self.the_char == '=' and self.in_responses:
 				self.parse_required_literal('=')
 				self.parse_element('correctResponse')
 			elif self.the_char == '~' and self.in_responses:
-				logging.debug("elif self.the_char == '~' and self.in_responses")
+				logging.debug("elif self.the_char == '~' and self.in_responses\n")
 				self.parse_required_literal('~')
 				self.parse_element('wrongResponse')
 			elif self.the_char == '}':
@@ -1103,15 +942,15 @@ class GIFTParser:
 					self.in_comment = False
 					self.parse_element()
 			else:
-				logging.debug("before self.parse_char_data(): {}".format(self.the_char))
+				logging.debug("before self.parse_char_data(): {}\n".format(self.the_char))
 				self.parse_char_data()
 				return True
-				logging.debug("after self.parse_char_data(): {}".format(self.the_char))
+				logging.debug("after self.parse_char_data(): {}\n".format(self.the_char))
 		self.reset()
 		return True
 
 	def parse_element(self, name=None):
-		logging.debug("parse_element({})".format(name))
+		logging.debug("parse_element({})\n".format(name))
 		save_element = self.element
 		save_element_type = self.elementType
 		save_cursor = None
@@ -1130,13 +969,15 @@ class GIFTParser:
 		"""
 		data = []
 		while self.the_char is not None:
+			if isinstance(self.the_char, int):
+				self.the_char = chr(self.the_char)
 			if self.in_question and self.the_char in ('{', '\n'):
-				logging.debug("if self.in_question and self.the_char in ('{', '\n')")
+				logging.debug("if self.in_question and self.the_char in ('{', '\n')\n")
 				break
 			elif self.numericType and self.the_char in ('{', '\n', '=', '~', '}'):
 				break
 			elif not (self.in_question or self.numericType) and self.the_char in ('{', '\n', ':', '#', '~', '=', '}'):
-				logging.debug("elif not self.in_question and self.the_char in ('{', '\n', ':', '#', '~', '=', '}')")
+				logging.debug("elif not self.in_question and self.the_char in ('{', '\n', ':', '#', '~', '=', '}')\n")
 				break
 			self.is_s()
 			data.append(self.the_char)
@@ -1149,7 +990,7 @@ class GIFTParser:
 					raise
 				data = []
 		data = ''.join(data)
-		logging.debug("parse_char_data(): data={}".format(data))
+		logging.debug("parse_char_data(): data={}\n".format(data))
 		try:
 			self.handle_data(data.strip())
 		except gift.GIFTValidityError:
