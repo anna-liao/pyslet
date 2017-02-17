@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 import logging
-logging.basicConfig(level=logging.DEBUG)
+# logging.basicConfig(level=logging.DEBUG)
 
 from pyslet.gift import structures as gift
 from ..pep8 import PEP8Compatibility

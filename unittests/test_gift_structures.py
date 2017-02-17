@@ -421,31 +421,26 @@ class DocumentTests(unittest.TestCase):
 	# 	d.set_base(furl)
 	# 	self.assertTrue(d.get_base() == furl, "Base not set by set_base")
 
-	# def test_read_file(self):
-	# 	"""Test the reading of the Document from the file system"""
-	# 	os.chdir(TEST_DATA_DIR)
-	# 	d = structures.Document(base_uri='readFile.txt')
-	# 	d.read()
-	# 	root = d.root
-	# 	self.assertTrue(isinstance(root, structures.Element))
-	# 	self.assertTrue(root.get_value() == 'Hello World')
-	#
-	# Cannot find where root is set to an Element in the source code, when
-	# Document object instantiated with no root specified or d.read()
-	# Need to implement parser still.
+	def test_read_file(self):
+		"""Test the reading of the Document from the file system"""
+		os.chdir(TEST_DATA_DIR)
+		d = structures.Document(base_uri='readFile.txt')
+		d.read()
+		root = d.root
+		self.assertTrue(isinstance(root, structures.Element), "root element: %s" % repr(root))
+		self.assertTrue(root.giftname == 'questionTitle', "root giftname: %s" % repr(root.giftname))
+		self.assertTrue(root.get_value() == 'Question titleQuestionA correct answerWrong answer1Wrong answer2Wrong answer3',
+			"root value: %s" % repr(root.get_value()))
 
-	# Problem with this test is parser.parse_element() needs to be modified.
-	# self.element is empty.  perhaps document.read() needs to add a root element.
-	# def test_read_string(self):
-	# 	"""Test the reading of the Document from a supplied stream"""
-	# 	os.chdir(TEST_DATA_DIR)
-	# 	d = structures.Document(base_uri='readFile.txt')
-	# 	with open('readFile.txt', 'rb') as f:
-	# 		d.read(src=f)
-	# 	root = d.root
-	# 	self.assertTrue(isinstance(root, structures.Element))
-		# self.assertTrue(root.giftname == 'root' and root.get_value() == 'Hello World')
-		# ISSUE: tree only contains last element in file.  tree insert and traversal not working
+	def test_read_string(self):
+		"""Test the reading of the Document from a supplied stream"""
+		os.chdir(TEST_DATA_DIR)
+		d = structures.Document(base_uri='readFile.txt')
+		with open('readFile.txt', 'rb') as f:
+			d.read(src=f)
+		root = d.root
+		self.assertTrue(isinstance(root, structures.Element))
+		self.assertTrue(root.giftname == 'questionTitle' and root.get_value() == 'Question titleQuestionA correct answerWrong answer1Wrong answer2Wrong answer3')
 
 	# def test_string(self):
 	# 	os.chdir(TEST_DATA_DIR)

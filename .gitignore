@@ -37,3 +37,7 @@ flake8-count.txt
 py3env
 py3-venv
 py27-venv
+
+* additional test scripts
+test_xml*
+unittests/data_xml20081126/choice.xml
