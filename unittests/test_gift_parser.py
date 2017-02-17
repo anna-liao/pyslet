@@ -72,16 +72,15 @@ class GIFTParserTests(unittest.TestCase):
 						"Failed at data[%i] after Rewind(%i)" % (i, j))
 				p.next_char()
 
-	# def test_document(self):
-	# 	os.chdir(TEST_DATA_DIR)
-	# 	f = open('readFile.txt', 'rb')
-	# 	with structures.GIFTEntity(f) as e:
-	# 		d = structures.Document()
-	# 		d.read(e)
-	# 		root = d.root
-	# 		self.assertTrue(isinstance(root, structures.Element))
-	# 		self.assertTrue(root.get_value() == 'Hello World')
-	# 	f.close()
+	def test_document(self):
+		os.chdir(TEST_DATA_DIR)
+		with open('readFile.txt', 'rb') as f:
+			with structures.GIFTEntity(f) as e:
+				d = structures.Document()
+				d.read(e)
+		root = d.root
+		self.assertTrue(isinstance(root, structures.Element))
+		self.assertTrue(root.get_value() == 'Question titleQuestionA correct answerWrong answer1Wrong answer2Wrong answer3')
 
 	def test_s(self):
 		with structures.GIFTEntity(" \t\r\n \r \nH ello") as e:
@@ -154,14 +153,6 @@ class GIFTParserTests(unittest.TestCase):
 			p = parser.GIFTParser(e)
 			p.parse_misc()
 			self.assertTrue(p.the_char is None, "Short parse of Misc")
-
-	def test_true_false(self):
-		s = """::Q1::1+1=2{T}"""
-		with structures.GIFTEntity(s) as e:
-			p = parser.GIFTParser(e)
-			element = p.element = structures.Element("a")
-			p.parse_element()
-			children = list(element.get_children())
 
 	def test_multiple_choice(self):
 		s = """//comment\n::Question title\n::Question{\n=A correct answer\n~Wrong answer1\n~Wrong answer2\n~Wrong answer3\n}"""
