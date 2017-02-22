@@ -23,7 +23,30 @@ TEST_DATA_DIR = os.path.join(
 class GIFTValidationTests(unittest.TestCase):
 
 	def test_well_formed(self):
-		# dpath = os.path.join(TEST_DATA_DIR, 'wellformed')
+		dpath = os.path.join(TEST_DATA_DIR, 'wellformed')
+		for fname in os.listdir(dpath):
+			if fname[-4:] != ".txt":
+				continue
+			f = uri.URI.from_path(os.path.join(dpath, fname))
+			with structures.GIFTEntity(f) as e:
+				d = structures.Document()
+				p = parser.GIFTParser(e)
+				p.check_validity = False
+				try:
+					p.parse_document(d)
+					self.assertTrue(
+						p.valid is None,
+						"Well-Formed Example: %s marked valid but "
+						"check_validity was False" % fname)
+				except parser.GIFTWellFormedError as e:
+					self.fail("Well-Formed Example: %s raised "
+						"GIFTWellFormedError\n%s" % (fname, str(e)))
+		# dpath = os.path.join(TEST_DATA_DIR, 'notwellformed')
+
+	def test_valid(self):
+		pass
+
+	def test_incompatible(self):
 		pass
 
 	def test_comment(self):
@@ -80,6 +103,15 @@ class GIFTParserTests(unittest.TestCase):
 				d.read(e)
 		root = d.root
 		self.assertTrue(isinstance(root, structures.Element))
+		self.assertTrue(root.giftname == 'questionTitle')
+		self.assertTrue(root.get_value() == 'Question titleQuestionA correct answerWrong answer1Wrong answer2Wrong answer3')
+		with open('readFile.txt', 'rb') as f:
+			with structures.GIFTEntity(f) as e:
+				p = parser.GIFTParser(e)
+				p.parse_document()
+		root = p.doc.root
+		self.assertTrue(isinstance(root, structures.Element))
+		self.assertTrue(root.giftname == 'questionTitle')
 		self.assertTrue(root.get_value() == 'Question titleQuestionA correct answerWrong answer1Wrong answer2Wrong answer3')
 
 	def test_s(self):
