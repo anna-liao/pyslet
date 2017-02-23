@@ -8,6 +8,9 @@ import logging
 import random
 import warnings
 
+import logging
+# logging.basicConfig(level=logging.DEBUG)
+
 from copy import copy
 from ..py2 import force_text
 from .py3 import (
@@ -27,6 +30,15 @@ class GIFTError(Exception):
 	"""Base class for all exceptions raised by this module."""
 	pass
 
+
+class GIFTUnsupportedChildTypeError(GIFTError):
+	"""Raised by :meth:`Element.generate_gift`
+
+	Indicates that generate_gift encountered unsupported child type.
+
+	Supported types: question, questionTitle, correctResponse, wrongResponse
+	"""
+	pass
 
 class DuplicateGIFTNAME(GIFTError):
 	"""Raised by :py:func:`map_class_elements`
@@ -1263,6 +1275,11 @@ class Element(Node):
 		if not self.is_mixed():
 			raise GIFTMixedContentError(self.__class__.__name__)
 		for child in self.get_children():
+			if isinstance(child, Element):
+				name = child.giftname
+			else:
+				name = child
+			logging.debug("generate_value(): child name, %s\n" % name)
 			yield str(child)
 			# if isinstance(child, str):
 			# 	yield str(child)
@@ -1287,6 +1304,10 @@ class Element(Node):
 		types or class instances that better represent the content of the element.
 		"""
 		# equivalent to join_characters in py2
+		# if isinstance(self, str):
+		# 	return self
+		# else:
+		# 	return join_characters(self.generate_value(ignore_elements))
 		return join_characters(self.generate_value(ignore_elements))
 
 	def set_value(self, value):
@@ -1593,7 +1614,7 @@ class Element(Node):
 			attributes.append('%s=%s' % (a, escape_char_data(attrs[a], True)))
 
 	def generate_gift(self, indent='', tab='\t', root=False, **kws):
-		"""A generator that yields serialised GIFT
+		"""Element class: A generator that yields serialised GIFT
 
 		This will need some thought to generate in GIFT format
 
@@ -1621,21 +1642,37 @@ class Element(Node):
 
 		Yields character strings.
 		"""
+		if isinstance(self, Element) and self.giftname == 'endResponses':
+			yield '}%s' % self.get_value()
+			return
 		children = self.get_canonical_children()
-		try:
-			child = next(children)
-			while True:
-				if isinstance(child, str):
-					yield child
-				else:
-					for s in child.generate_gift():
-						yield s
-				try:
-					child = next(children)
-				except StopIteration:
-					break
-		except StopIteration:
-			yield '%s' % (self.giftname)
+		while True:
+			try:
+				child = next(children)
+			except StopIteration:
+				break
+			if isinstance(child, str):
+				logging.debug("string element: %s\n" % child)
+				giftname = self.giftname
+				value = child
+			else:
+				logging.debug("not string element: %s\n" % child.giftname)
+				giftname = child.giftname
+				value = child.get_value()
+			if giftname == 'questionTitle':
+				yield '::%s' % value
+			elif giftname == 'question':
+				yield '::%s{' % value
+			elif giftname == 'correctResponse':
+				yield '=%s' % value
+			elif giftname == 'wrongResponse':
+				logging.debug("giftname == wrongResponse\n")
+				yield '~%s' % value
+			elif giftname == 'endResponses':
+				logging.debug("giftname == endResponses\n")
+				yield '}%s' % value
+			else:
+				raise GIFTUnsupportedChildTypeError("child giftname: %s" % child.giftname)
 
 	def write_gift(self):
 		"""Writes serialized GIFT to an output stream.
@@ -1982,7 +2019,6 @@ class Document(Node):
 
 	def __str__(self):
 		"""Returns GIFT document as string"""
-		# raise NotImplementedError
 		s = io.StringIO()
 		for data in self.generate_gift():
 			s.write(data)
@@ -2037,15 +2073,21 @@ class Document(Node):
 		# 	child.set_giftname(name)
 		# self.root = child
 		# return self.root
-		if self.root:
-			child = self.root.add_child(child_class, name)
-			return child
-		else:
-			child = child_class(self)
-			if name:
-				child.set_giftname(name)
-			self.root = child
-			return self.root
+		logging.debug("add_child(): name, %s" % name)
+		if not self.root:
+			self.root = Element("root")
+		child = self.root.add_child(child_class, name)
+		return child
+
+		# if self.root:
+		# 	child = self.root.add_child(child_class, name)
+		# 	return child
+		# else:
+		# 	child = child_class(self)
+		# 	if name:
+		# 		child.set_giftname(name)
+		# 	self.root = child
+		# 	return self.root
 
 	def set_base(self, base_uri):
 		"""Sets the base_uri of the document to the given URI.
@@ -2246,7 +2288,7 @@ class Document(Node):
 		Yields character strings.
 		"""
 		if self.root:
-			for s in self.root.generate_gift(root=True):
+			for s in self.root.generate_gift():
 				yield s
 
 	def write_gift(self, writer):

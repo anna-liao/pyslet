@@ -934,10 +934,12 @@ class GIFTParser:
 				self.in_responses = False
 				self.after_brackets = True
 				self.parse_required_literal('}')
-				if self.skip():
-					break
-				if self.the_char.isalnum():
-					self.parse_element('aftertheblank')
+				self.parse_element('endResponses')
+				# if self.skip():
+				# 	break
+				# if self.the_char.isalnum():
+				# 	print("aftertheblank: the_char, %s" % self.the_char)
+				# 	self.parse_element('aftertheblank')
 			elif self.the_char == '\n':
 				self.next_char()
 				if self.in_comment:

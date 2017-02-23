@@ -428,8 +428,8 @@ class DocumentTests(unittest.TestCase):
 		d.read()
 		root = d.root
 		self.assertTrue(isinstance(root, structures.Element), "root element: %s" % repr(root))
-		self.assertTrue(root.giftname == 'questionTitle', "root giftname: %s" % repr(root.giftname))
-		self.assertTrue(root.get_value() == 'Question titleQuestionA correct answerWrong answer1Wrong answer2Wrong answer3',
+		self.assertTrue(root.giftname is None, "root giftname: %s" % repr(root.giftname))
+		self.assertTrue(root.get_value() == '::Question title::Question{=A correct answer~Wrong answer1~Wrong answer2~Wrong answer3}',
 			"root value: %s" % repr(root.get_value()))
 
 	def test_read_string(self):
@@ -440,7 +440,9 @@ class DocumentTests(unittest.TestCase):
 			d.read(src=f)
 		root = d.root
 		self.assertTrue(isinstance(root, structures.Element))
-		self.assertTrue(root.giftname == 'questionTitle' and root.get_value() == 'Question titleQuestionA correct answerWrong answer1Wrong answer2Wrong answer3')
+		self.assertTrue(root.giftname is None, "root giftname: %s" % repr(root.giftname))
+		self.assertTrue(root.get_value() == '::Question title::Question{=A correct answer~Wrong answer1~Wrong answer2~Wrong answer3}',
+			"root value: %s" % repr(root.get_value()))
 
 	# def test_string(self):
 	# 	os.chdir(TEST_DATA_DIR)

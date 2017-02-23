@@ -2,11 +2,27 @@ from unittests.test_gift_parser import *
 
 os.chdir(TEST_DATA_DIR)
 
+# with open('readFile.txt', 'rb') as f:
+# 	with structures.GIFTEntity(f) as e:
+# 		p = parser.GIFTParser(e)
+# 		p.parse_document()
+# root = p.doc.root
+
 with open('readFile.txt', 'rb') as f:
 	with structures.GIFTEntity(f) as e:
-		p = parser.GIFTParser(e)
-		p.parse_document()
-root = p.doc.root
+		d = structures.Document()
+		d.read(e)
+root = d.root
+
+children = list(root.get_children())
+for child in children:
+	print(type(child))
+root.get_value()
+
+for child in children:
+	for data in child.generate_gift():
+		print(data)
+
 
 # d = structures.Document(base_uri='readFile.txt')
 # d.read()
