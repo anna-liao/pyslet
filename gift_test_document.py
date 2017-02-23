@@ -2,11 +2,17 @@ from unittests.test_gift_parser import *
 
 os.chdir(TEST_DATA_DIR)
 
-d = structures.Document(base_uri='readFile.txt')
-d.read()
 with open('readFile.txt', 'rb') as f:
-	flines = f.read().splitlines()
-dlines = bytes(d).split(b'\n')
+	with structures.GIFTEntity(f) as e:
+		p = parser.GIFTParser(e)
+		p.parse_document()
+root = p.doc.root
+
+# d = structures.Document(base_uri='readFile.txt')
+# d.read()
+# with open('readFile.txt', 'rb') as f:
+# 	flines = f.read().splitlines()
+# dlines = bytes(d).split(b'\n')
 
 # children = list(d.get_children())
 # print("Length of children: {}".format(len(children)))
@@ -19,15 +25,3 @@ dlines = bytes(d).split(b'\n')
 # with open('readFile.txt', 'rb') as f:
 # 	d.read(src=f)
 # root = d.root
-
-	# d.read(src=f)
-	# with structures.GIFTEntity(f) as e:
-	# 	p = parser.GIFTParser(e)
-	# 	# p.element = structures.Element("a")
-	# 	p.parse_document()
-	# 	root = p.doc.root
-	# with structures.GIFTEntity(f) as e:
-	# 	d = structures.Document()
-	# 	d.read(e)
-
-# document object requires DTD

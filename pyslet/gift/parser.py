@@ -636,6 +636,8 @@ class GIFTParser:
 		# elif self.doc.dtd is None:
 		# 	# override the document's DTD
 		# 	self.doc.dtd = self.dtd
+		if self.doc is None:
+			self.doc = gift.Document()
 		while self.the_char is not None:
 			self.parse_element()
 		# self.parse_misc()
